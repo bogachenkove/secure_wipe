@@ -7,7 +7,7 @@ void platformInit(void)
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
 #else
-    setlocale(LC_ALL, "en_US.UTF-8");
+    setlocale(LC_ALL, "C.UTF-8");
 #endif
 }
 
@@ -25,7 +25,8 @@ bool checkAdminPrivileges(void)
         SECURITY_BUILTIN_DOMAIN_RID,
         DOMAIN_ALIAS_RID_ADMINS,
         0, 0, 0, 0, 0, 0,
-        &adminGroup)) {
+        &adminGroup))
+    {
         CheckTokenMembership(NULL, adminGroup, &isAdmin);
         FreeSid(adminGroup);
     }
@@ -57,28 +58,37 @@ void alignedFree(void* ptr)
 static bool isPhysicalDriveMounted(int diskNumber)
 {
     HANDLE volume = FindFirstVolumeW(NULL, 0);
-    if (volume == INVALID_HANDLE_VALUE) return false;
+    if (volume == INVALID_HANDLE_VALUE)
+        return false;
     wchar_t volumeName[MAX_PATH];
     DWORD bytesReturned;
     bool found = false;
-    while (FindNextVolumeW(volume, volumeName, MAX_PATH)) {
+    while (FindNextVolumeW(volume, volumeName, MAX_PATH))
+    {
         wchar_t volumePath[MAX_PATH];
-        if (GetVolumePathNamesForVolumeNameW(volumeName, volumePath, MAX_PATH, &bytesReturned)) {
-            HANDLE hVolume = CreateFileW(volumeName, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        if (GetVolumePathNamesForVolumeNameW(volumeName, volumePath, MAX_PATH, &bytesReturned))
+        {
+            HANDLE hVolume = CreateFileW(volumeName, 0,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
                 NULL, OPEN_EXISTING, 0, NULL);
-            if (hVolume != INVALID_HANDLE_VALUE) {
+            if (hVolume != INVALID_HANDLE_VALUE)
+            {
                 VOLUME_DISK_EXTENTS extents;
                 if (DeviceIoControl(hVolume, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS,
-                    NULL, 0, &extents, sizeof(extents), &bytesReturned, NULL)) {
-                    for (DWORD i = 0; i < extents.NumberOfDiskExtents; i++) {
-                        if ((int)extents.Extents[i].DiskNumber == diskNumber) {
+                    NULL, 0, &extents, sizeof(extents), &bytesReturned, NULL))
+                {
+                    for (DWORD extentIndex = 0; extentIndex < extents.NumberOfDiskExtents; extentIndex++)
+                    {
+                        if ((int)extents.Extents[extentIndex].DiskNumber == diskNumber)
+                        {
                             found = true;
                             break;
                         }
                     }
                 }
                 CloseHandle(hVolume);
-                if (found) break;
+                if (found)
+                    break;
             }
         }
     }
@@ -91,19 +101,22 @@ bool isDeviceMounted(const char* devicePath)
 {
 #ifdef _WIN32
     int diskNumber = -1;
-    if (sscanf(devicePath, "\\\\.\\PhysicalDrive%d", &diskNumber) == 1) {
+    if (sscanf(devicePath, "\\\\.\\PhysicalDrive%d", &diskNumber) == 1)
         return isPhysicalDriveMounted(diskNumber);
-    }
     return false;
 #else
     FILE* mounts = fopen("/proc/mounts", "r");
-    if (!mounts) return false;
+    if (!mounts)
+        return false;
     char line[512];
     bool found = false;
-    while (fgets(line, sizeof(line), mounts)) {
+    while (fgets(line, sizeof(line), mounts))
+    {
         char mountedDevice[256], mountPoint[256];
-        if (sscanf(line, "%255s %255s", mountedDevice, mountPoint) == 2) {
-            if (strcmp(mountedDevice, devicePath) == 0) {
+        if (sscanf(line, "%255s %255s", mountedDevice, mountPoint) == 2)
+        {
+            if (strcmp(mountedDevice, devicePath) == 0)
+            {
                 LOG_WARN("Device %s is mounted at %s", devicePath, mountPoint);
                 found = true;
                 break;

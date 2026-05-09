@@ -20,28 +20,28 @@ typedef struct {
     uint32_t passes;
     bool skipBadSectors;
     bool verifyAfterWipe;
-    analysis_result_t* badSectors;
+    analysis_result_t *badSectors;
     progress_callback_t progress;
 } wipe_config_t;
 
 error_code_t wiperInit(void);
 void wiperCleanup(void);
-error_code_t wiperExecute(device_t* dev, const wipe_config_t* config, wipe_stats_t* stats);
-const char* wiperMethodName(wipe_method_t method);
+error_code_t wiperExecute(device_t *dev, const wipe_config_t *config, wipe_stats_t *stats);
+const char *wiperMethodName(wipe_method_t method);
 int wiperMethodPasses(wipe_method_t method);
 
-typedef error_code_t(*wiper_method_func)(device_t* dev, uint32_t passes, progress_callback_t progress);
+typedef error_code_t(*wiper_method_func)(device_t *dev, uint32_t passes, progress_callback_t progress);
 
-error_code_t wiperMethodZero(device_t* dev, uint32_t passes, progress_callback_t progress);
-error_code_t wiperMethodRandom(device_t* dev, uint32_t passes, progress_callback_t progress);
-error_code_t wiperMethodDoDShort(device_t* dev, uint32_t passes, progress_callback_t progress);
-error_code_t wiperMethodDoDFull(device_t* dev, uint32_t passes, progress_callback_t progress);
-error_code_t wiperMethodSchneier(device_t* dev, uint32_t passes, progress_callback_t progress);
-error_code_t wiperMethodGutmann(device_t* dev, uint32_t passes, progress_callback_t progress);
-error_code_t wiperMethodCustom(device_t* dev, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodZero(device_t *dev, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodRandom(device_t *dev, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodDoDShort(device_t *dev, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodDoDFull(device_t *dev, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodSchneier(device_t *dev, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodGutmann(device_t *dev, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodCustom(device_t *dev, uint32_t passes, progress_callback_t progress);
 
-error_code_t wiperZeroPartitionTable(device_t* dev);
-error_code_t wiperPrepareDevice(device_t* dev, progress_callback_t progress);
-bool wiperTryRemoveWriteProtection(device_t* dev);
+error_code_t wiperZeroPartitionTable(device_t *dev);
+error_code_t wiperPrepareDevice(device_t *dev, progress_callback_t progress);
+bool wiperTryRemoveWriteProtection(device_t *dev);
 
 #endif

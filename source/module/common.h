@@ -9,15 +9,15 @@
 #include <string.h>
 #include <time.h>
 
-#define DEFAULT_BUFFER_SIZE     (512 * 1024)   // 512 KB
-#define MIN_BUFFER_SIZE         (512)          // 1 sector
-#define MAX_BUFFER_SIZE         (1024 * 1024 * 256) // 256 MB
+#define DEFAULT_BUFFER_SIZE     (512 * 1024)
+#define MIN_BUFFER_SIZE         (512)
+#define MAX_BUFFER_SIZE         (1024 * 1024 * 256)
 
-extern size_t g_bufferSize;
-extern size_t g_bufferSectors;
+extern size_t gBufferSize;
+extern size_t gBufferSectors;
 
 int bufferSetSize(size_t sizeBytes);
-void bufferGetSizeInfo(size_t* sizeBytes, size_t* sectors);
+void bufferGetSizeInfo(size_t *sizeBytes, size_t *sectors);
 
 #define SECTOR_SIZE         512
 #define MAX_PATH_LEN        260
@@ -42,7 +42,7 @@ typedef struct {
     uint64_t totalBytes;
     uint64_t readableSectors;
     uint64_t badSectorCount;
-    uint64_t* badSectors;
+    uint64_t *badSectors;
     size_t badSectorsCapacity;
 } analysis_result_t;
 
@@ -55,27 +55,27 @@ typedef struct {
     time_t endTime;
 } wipe_stats_t;
 
-typedef void (*progress_callback_t)(uint64_t current, uint64_t total, int pass, const char* phase);
+typedef void (*progress_callback_t)(uint64_t current, uint64_t total, int pass, const char *phase);
 
 typedef struct {
-    FILE* logFile;
+    FILE *logFile;
     bool verbose;
     char logPath[MAX_PATH_LEN];
 } logger_t;
 
-extern logger_t g_logger;
+extern logger_t gLogger;
 
-void logInit(const char* logPath, bool verbose);
+void logInit(const char *logPath, bool verbose);
 void logClose(void);
-void logMessage(const char* level, const char* fmt, ...);
-void logBadSector(uint64_t sector, const char* operation);
+void logMessage(const char *level, const char *fmt, ...);
+void logBadSector(uint64_t sector, const char *operation);
 
 #define LOG_INFO(...)  logMessage("INFO", __VA_ARGS__)
 #define LOG_WARN(...)  logMessage("WARN", __VA_ARGS__)
 #define LOG_ERROR(...) logMessage("ERROR", __VA_ARGS__)
 
-const char* errorToString(error_code_t err);
-void formatBytes(uint64_t bytes, char* buffer, size_t bufferSize);
-void formatTime(time_t seconds, char* buffer, size_t bufferSize);
+const char *errorToString(error_code_t err);
+void formatBytes(uint64_t bytes, char *buffer, size_t bufferSize);
+void formatTime(time_t seconds, char *buffer, size_t bufferSize);
 
 #endif

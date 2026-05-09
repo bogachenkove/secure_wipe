@@ -37,12 +37,12 @@ typedef struct {
     int count;
 } disk_scan_result_t;
 
-error_code_t diskScannerScan(disk_scan_result_t* result);
-error_code_t diskScannerGetInfo(const char* devicePath, disk_info_t* info);
-void diskScannerPrintList(const disk_scan_result_t* result, bool showAll);
-void diskScannerPrintDetail(const disk_info_t* info);
-const char* diskTypeToString(disk_type_t type);
-bool diskScannerIsSafeToWipe(const disk_info_t* info);
-const disk_info_t* diskScannerGetByIndex(const disk_scan_result_t* result, int index);
+error_code_t diskScannerScan(disk_scan_result_t *result);
+error_code_t diskScannerGetInfo(const char *devicePath, disk_info_t *info);
+void diskScannerPrintList(const disk_scan_result_t *result, bool showAll);
+void diskScannerPrintDetail(const disk_info_t *info);
+const char *diskTypeToString(disk_type_t type);
+bool diskScannerIsSafeToWipe(const disk_info_t *info);
+const disk_info_t *diskScannerGetByIndex(const disk_scan_result_t *result, int index);
 
 #endif

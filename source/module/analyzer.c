@@ -1,18 +1,19 @@
 #include "analyzer.h"
 #include "platform.h"
 
-error_code_t analyzerInitResult(analysis_result_t* result)
+error_code_t analyzerInitResult(analysis_result_t *result)
 {
     if (!result) return ERR_INVALID_ARG;
     memset(result, 0, sizeof(analysis_result_t));
     result->badSectorsCapacity = 1024;
-    result->badSectors = (uint64_t*)malloc(result->badSectorsCapacity * sizeof(uint64_t));
+    result->badSectors = (uint64_t *)malloc(result->badSectorsCapacity * sizeof(uint64_t));
     return result->badSectors ? ERR_OK : ERR_MEMORY;
 }
 
-void analyzerFreeResult(analysis_result_t* result)
+void analyzerFreeResult(analysis_result_t *result)
 {
-    if (result) {
+    if (result)
+    {
         free(result->badSectors);
         result->badSectors = NULL;
         result->badSectorsCapacity = 0;
@@ -20,17 +21,19 @@ void analyzerFreeResult(analysis_result_t* result)
     }
 }
 
-error_code_t analyzerAddBadSector(analysis_result_t* result, uint64_t sector)
+error_code_t analyzerAddBadSector(analysis_result_t *result, uint64_t sector)
 {
     if (!result) return ERR_INVALID_ARG;
-    if (result->badSectorCount >= result->badSectorsCapacity) {
+    if (result->badSectorCount >= result->badSectorsCapacity)
+    {
         size_t newCapacity = result->badSectorsCapacity * 2;
         if (newCapacity > MAX_BAD_SECTORS) newCapacity = MAX_BAD_SECTORS;
-        if (result->badSectorCount >= MAX_BAD_SECTORS) {
+        if (result->badSectorCount >= MAX_BAD_SECTORS)
+        {
             LOG_WARN("Maximum bad sector count reached");
             return ERR_MEMORY;
         }
-        uint64_t* newArray = (uint64_t*)realloc(result->badSectors, newCapacity * sizeof(uint64_t));
+        uint64_t *newArray = (uint64_t *)realloc(result->badSectors, newCapacity * sizeof(uint64_t));
         if (!newArray) return ERR_MEMORY;
         result->badSectors = newArray;
         result->badSectorsCapacity = newCapacity;
@@ -40,17 +43,16 @@ error_code_t analyzerAddBadSector(analysis_result_t* result, uint64_t sector)
     return ERR_OK;
 }
 
-bool analyzerIsBadSector(const analysis_result_t* result, uint64_t sector)
+bool analyzerIsBadSector(const analysis_result_t *result, uint64_t sector)
 {
     if (!result || !result->badSectors) return false;
-    for (uint64_t index = 0; index < result->badSectorCount; index++) {
+    for (uint64_t index = 0; index < result->badSectorCount; index++)
         if (result->badSectors[index] == sector) return true;
-    }
     return false;
 }
 
-error_code_t analyzerScanDevice(device_t* dev, analysis_result_t* result,
-    progress_callback_t progress)
+error_code_t analyzerScanDevice(device_t *dev, analysis_result_t *result,
+                                progress_callback_t progress)
 {
     if (!dev || !dev->isOpen || !result) return ERR_INVALID_ARG;
     LOG_INFO("Starting device analysis...");
@@ -58,35 +60,38 @@ error_code_t analyzerScanDevice(device_t* dev, analysis_result_t* result,
     result->totalSectors = dev->sectorCount;
     result->totalBytes = dev->sizeBytes;
     result->readableSectors = 0;
-    uint8_t* readBuffer = (uint8_t*)alignedAlloc(g_bufferSize);
+    uint8_t *readBuffer = (uint8_t *)alignedAlloc(gBufferSize);
     if (!readBuffer) return ERR_MEMORY;
-    const device_io_ops_t* ioOps = deviceIoGetOps();
+    const device_io_ops_t *ioOps = deviceIoGetOps();
     uint64_t currentSector = 0;
     uint64_t lastProgressPercent = 0;
-    while (currentSector < dev->sectorCount) {
-        uint32_t sectorsToRead = (uint32_t)g_bufferSectors;
-        if (currentSector + sectorsToRead > dev->sectorCount) {
+    while (currentSector < dev->sectorCount)
+    {
+        uint32_t sectorsToRead = (uint32_t)gBufferSectors;
+        if (currentSector + sectorsToRead > dev->sectorCount)
             sectorsToRead = (uint32_t)(dev->sectorCount - currentSector);
-        }
         error_code_t readError = ioOps->readSectors(dev, currentSector, sectorsToRead, readBuffer);
-        if (readError == ERR_OK) {
+        if (readError == ERR_OK)
+        {
             result->readableSectors += sectorsToRead;
         }
-        else {
-            for (uint32_t offset = 0; offset < sectorsToRead; offset++) {
+        else
+        {
+            for (uint32_t offset = 0; offset < sectorsToRead; offset++)
+            {
                 uint64_t sectorToCheck = currentSector + offset;
-                if (ioOps->readSectors(dev, sectorToCheck, 1, readBuffer) == ERR_OK) {
+                if (ioOps->readSectors(dev, sectorToCheck, 1, readBuffer) == ERR_OK)
                     result->readableSectors++;
-                }
-                else {
+                else
                     analyzerAddBadSector(result, sectorToCheck);
-                }
             }
         }
         currentSector += sectorsToRead;
-        if (progress) {
+        if (progress)
+        {
             uint64_t currentPercent = (currentSector * 100) / dev->sectorCount;
-            if (currentPercent > lastProgressPercent) {
+            if (currentPercent > lastProgressPercent)
+            {
                 progress(currentSector, dev->sectorCount, 0, "Analyzing");
                 lastProgressPercent = currentPercent;
             }
@@ -94,12 +99,12 @@ error_code_t analyzerScanDevice(device_t* dev, analysis_result_t* result,
     }
     alignedFree(readBuffer);
     LOG_INFO("Analysis complete - Readable: %llu, Bad: %llu",
-        (unsigned long long)result->readableSectors,
-        (unsigned long long)result->badSectorCount);
+             (unsigned long long)result->readableSectors,
+             (unsigned long long)result->badSectorCount);
     return ERR_OK;
 }
 
-void analyzerPrintReport(const analysis_result_t* result)
+void analyzerPrintReport(const analysis_result_t *result)
 {
     if (!result) return;
     char totalString[32], readableString[32];
@@ -111,48 +116,50 @@ void analyzerPrintReport(const analysis_result_t* result)
     printf("Readable sectors:   %llu\n", (unsigned long long)result->readableSectors);
     printf("Readable data:      %s\n", readableString);
     printf("Bad sectors:        %llu\n", (unsigned long long)result->badSectorCount);
-    if (result->badSectorCount > 0) {
+    if (result->badSectorCount > 0)
+    {
         printf("\nBad sector addresses (first 20):\n");
         uint64_t showCount = result->badSectorCount > 20 ? 20 : result->badSectorCount;
-        for (uint64_t index = 0; index < showCount; index++) {
+        for (uint64_t index = 0; index < showCount; index++)
             printf("  Sector %llu (offset 0x%llX)\n",
-                (unsigned long long)result->badSectors[index],
-                (unsigned long long)(result->badSectors[index] * SECTOR_SIZE));
-        }
-        if (result->badSectorCount > 20) {
+                   (unsigned long long)result->badSectors[index],
+                   (unsigned long long)(result->badSectors[index] * SECTOR_SIZE));
+        if (result->badSectorCount > 20)
             printf("  ... and %llu more\n", (unsigned long long)(result->badSectorCount - 20));
-        }
     }
     printf("======================================\n\n");
 }
 
-uint64_t analyzerVerifyWipe(device_t* dev, progress_callback_t progress)
+uint64_t analyzerVerifyWipe(device_t *dev, progress_callback_t progress)
 {
     if (!dev || !dev->isOpen) return UINT64_MAX;
     LOG_INFO("Starting wipe verification...");
-    uint8_t* readBuffer = (uint8_t*)alignedAlloc(g_bufferSize);
+    uint8_t *readBuffer = (uint8_t *)alignedAlloc(gBufferSize);
     if (!readBuffer) return UINT64_MAX;
-    const device_io_ops_t* ioOps = deviceIoGetOps();
+    const device_io_ops_t *ioOps = deviceIoGetOps();
     uint64_t errorCount = 0;
     uint64_t currentSector = 0;
     uint64_t lastProgressPercent = 0;
-    while (currentSector < dev->sectorCount) {
-        uint32_t sectorsToRead = (uint32_t)g_bufferSectors;
-        if (currentSector + sectorsToRead > dev->sectorCount) {
+    while (currentSector < dev->sectorCount)
+    {
+        uint32_t sectorsToRead = (uint32_t)gBufferSectors;
+        if (currentSector + sectorsToRead > dev->sectorCount)
             sectorsToRead = (uint32_t)(dev->sectorCount - currentSector);
-        }
-        if (ioOps->readSectors(dev, currentSector, sectorsToRead, readBuffer) != ERR_OK) {
-            for (uint32_t offset = 0; offset < sectorsToRead; offset++) {
-                if (ioOps->readSectors(dev, currentSector + offset, 1, readBuffer) != ERR_OK) {
+        if (ioOps->readSectors(dev, currentSector, sectorsToRead, readBuffer) != ERR_OK)
+        {
+            for (uint32_t offset = 0; offset < sectorsToRead; offset++)
+                if (ioOps->readSectors(dev, currentSector + offset, 1, readBuffer) != ERR_OK)
+                {
                     errorCount++;
                     logBadSector(currentSector + offset, "verification");
                 }
-            }
         }
         currentSector += sectorsToRead;
-        if (progress) {
+        if (progress)
+        {
             uint64_t currentPercent = (currentSector * 100) / dev->sectorCount;
-            if (currentPercent > lastProgressPercent) {
+            if (currentPercent > lastProgressPercent)
+            {
                 progress(currentSector, dev->sectorCount, 0, "Verifying");
                 lastProgressPercent = currentPercent;
             }
@@ -163,15 +170,16 @@ uint64_t analyzerVerifyWipe(device_t* dev, progress_callback_t progress)
     return errorCount;
 }
 
-error_code_t analyzerInitExtendedResult(extended_analysis_result_t* result)
+error_code_t analyzerInitExtendedResult(extended_analysis_result_t *result)
 {
     if (!result) return ERR_INVALID_ARG;
     memset(result, 0, sizeof(extended_analysis_result_t));
     error_code_t baseError = analyzerInitResult(&result->base);
     if (baseError != ERR_OK) return baseError;
     result->wpCapacity = 1024;
-    result->writeProtected = (uint64_t*)malloc(result->wpCapacity * sizeof(uint64_t));
-    if (!result->writeProtected) {
+    result->writeProtected = (uint64_t *)malloc(result->wpCapacity * sizeof(uint64_t));
+    if (!result->writeProtected)
+    {
         analyzerFreeResult(&result->base);
         return ERR_MEMORY;
     }
@@ -180,9 +188,10 @@ error_code_t analyzerInitExtendedResult(extended_analysis_result_t* result)
     return ERR_OK;
 }
 
-void analyzerFreeExtendedResult(extended_analysis_result_t* result)
+void analyzerFreeExtendedResult(extended_analysis_result_t *result)
 {
-    if (result) {
+    if (result)
+    {
         analyzerFreeResult(&result->base);
         free(result->writeProtected);
         result->writeProtected = NULL;
@@ -191,13 +200,14 @@ void analyzerFreeExtendedResult(extended_analysis_result_t* result)
     }
 }
 
-static error_code_t addWpSector(extended_analysis_result_t* result, uint64_t sector)
+static error_code_t addWpSector(extended_analysis_result_t *result, uint64_t sector)
 {
     if (!result) return ERR_INVALID_ARG;
-    if (result->wpCount >= result->wpCapacity) {
+    if (result->wpCount >= result->wpCapacity)
+    {
         size_t newCapacity = result->wpCapacity * 2;
         if (newCapacity > MAX_BAD_SECTORS) newCapacity = MAX_BAD_SECTORS;
-        uint64_t* newArray = (uint64_t*)realloc(result->writeProtected, newCapacity * sizeof(uint64_t));
+        uint64_t *newArray = (uint64_t *)realloc(result->writeProtected, newCapacity * sizeof(uint64_t));
         if (!newArray) return ERR_MEMORY;
         result->writeProtected = newArray;
         result->wpCapacity = newCapacity;
@@ -209,23 +219,25 @@ static error_code_t addWpSector(extended_analysis_result_t* result, uint64_t sec
     return ERR_OK;
 }
 
-static int testSectorWrite(device_t* dev, const device_io_ops_t* ioOps,
-    uint64_t sector, uint8_t* writeBuffer,
-    uint8_t* readBuffer, uint8_t* backupBuffer)
+static int testSectorWrite(device_t *dev, const device_io_ops_t *ioOps,
+                           uint64_t sector, uint8_t *writeBuffer,
+                           uint8_t *readBuffer, uint8_t *backupBuffer)
 {
     if (backupBuffer) ioOps->readSectors(dev, sector, 1, backupBuffer);
-    for (int byteIndex = 0; byteIndex < SECTOR_SIZE; byteIndex++) {
+    for (int byteIndex = 0; byteIndex < SECTOR_SIZE; byteIndex++)
         writeBuffer[byteIndex] = (uint8_t)((sector ^ 0xAA ^ byteIndex) & 0xFF);
-    }
-    if (ioOps->writeSectors(dev, sector, 1, writeBuffer) != ERR_OK) {
+    if (ioOps->writeSectors(dev, sector, 1, writeBuffer) != ERR_OK)
+    {
         if (backupBuffer) ioOps->writeSectors(dev, sector, 1, backupBuffer);
         return 1;
     }
-    if (ioOps->readSectors(dev, sector, 1, readBuffer) != ERR_OK) {
+    if (ioOps->readSectors(dev, sector, 1, readBuffer) != ERR_OK)
+    {
         if (backupBuffer) ioOps->writeSectors(dev, sector, 1, backupBuffer);
         return 2;
     }
-    if (memcmp(writeBuffer, readBuffer, SECTOR_SIZE) != 0) {
+    if (memcmp(writeBuffer, readBuffer, SECTOR_SIZE) != 0)
+    {
         if (backupBuffer) ioOps->writeSectors(dev, sector, 1, backupBuffer);
         return 3;
     }
@@ -233,10 +245,10 @@ static int testSectorWrite(device_t* dev, const device_io_ops_t* ioOps,
     return 0;
 }
 
-error_code_t analyzerScanDeviceExtended(device_t* dev,
-    extended_analysis_result_t* result,
-    analyze_flags_t flags,
-    progress_callback_t progress)
+error_code_t analyzerScanDeviceExtended(device_t *dev,
+                                        extended_analysis_result_t *result,
+                                        analyze_flags_t flags,
+                                        progress_callback_t progress)
 {
     if (!dev || !dev->isOpen || !result) return ERR_INVALID_ARG;
     bool doWriteTest = (flags & ANALYZE_WRITE_TEST) != 0;
@@ -246,14 +258,16 @@ error_code_t analyzerScanDeviceExtended(device_t* dev,
     result->base.totalSectors = dev->sectorCount;
     result->base.totalBytes = dev->sizeBytes;
     result->base.readableSectors = 0;
-    uint8_t* readBuffer = (uint8_t*)alignedAlloc(g_bufferSize);
-    uint8_t* writeBuffer = NULL, * verifyBuffer = NULL, * backupBuffer = NULL;
+    uint8_t *readBuffer = (uint8_t *)alignedAlloc(gBufferSize);
+    uint8_t *writeBuffer = NULL, *verifyBuffer = NULL, *backupBuffer = NULL;
     if (!readBuffer) return ERR_MEMORY;
-    if (doWriteTest || detectWp) {
+    if (doWriteTest || detectWp)
+    {
         writeBuffer = alignedAlloc(SECTOR_SIZE);
         verifyBuffer = alignedAlloc(SECTOR_SIZE);
         if (detectWp && !doWriteTest) backupBuffer = alignedAlloc(SECTOR_SIZE);
-        if (!writeBuffer || !verifyBuffer) {
+        if (!writeBuffer || !verifyBuffer)
+        {
             alignedFree(readBuffer);
             if (writeBuffer) alignedFree(writeBuffer);
             if (verifyBuffer) alignedFree(verifyBuffer);
@@ -261,71 +275,81 @@ error_code_t analyzerScanDeviceExtended(device_t* dev,
             return ERR_MEMORY;
         }
     }
-    const device_io_ops_t* ioOps = deviceIoGetOps();
+    const device_io_ops_t *ioOps = deviceIoGetOps();
     uint64_t currentSector = 0;
     uint64_t lastProgressPercent = 0;
-    while (currentSector < dev->sectorCount) {
-        uint32_t sectorsToProcess = (uint32_t)g_bufferSectors;
-        if (currentSector + sectorsToProcess > dev->sectorCount) {
+    while (currentSector < dev->sectorCount)
+    {
+        uint32_t sectorsToProcess = (uint32_t)gBufferSectors;
+        if (currentSector + sectorsToProcess > dev->sectorCount)
             sectorsToProcess = (uint32_t)(dev->sectorCount - currentSector);
-        }
         error_code_t readError = ioOps->readSectors(dev, currentSector, sectorsToProcess, readBuffer);
-        if (readError == ERR_OK) {
+        if (readError == ERR_OK)
+        {
             result->base.readableSectors += sectorsToProcess;
-            if (doWriteTest || detectWp) {
+            if (doWriteTest || detectWp)
+            {
                 uint32_t step = doWriteTest ? 1 : 64;
-                for (uint32_t offset = 0; offset < sectorsToProcess; offset += step) {
+                for (uint32_t offset = 0; offset < sectorsToProcess; offset += step)
+                {
                     uint64_t testSector = currentSector + offset;
                     int writeResult = testSectorWrite(dev, ioOps, testSector,
-                        writeBuffer, verifyBuffer, backupBuffer);
-                    switch (writeResult) {
-                    case 1:
-                        result->writeErrors++;
-                        addWpSector(result, testSector);
-                        break;
-                    case 2:
-                        result->readErrors++;
-                        analyzerAddBadSector(&result->base, testSector);
-                        break;
-                    case 3:
-                        result->verifyErrors++;
-                        break;
+                                                      writeBuffer, verifyBuffer, backupBuffer);
+                    switch (writeResult)
+                    {
+                        case 1:
+                            result->writeErrors++;
+                            addWpSector(result, testSector);
+                            break;
+                        case 2:
+                            result->readErrors++;
+                            analyzerAddBadSector(&result->base, testSector);
+                            break;
+                        case 3:
+                            result->verifyErrors++;
+                            break;
                     }
                 }
             }
         }
-        else {
-            for (uint32_t offset = 0; offset < sectorsToProcess; offset++) {
+        else
+        {
+            for (uint32_t offset = 0; offset < sectorsToProcess; offset++)
+            {
                 uint64_t testSector = currentSector + offset;
-                if (ioOps->readSectors(dev, testSector, 1, readBuffer) == ERR_OK) {
+                if (ioOps->readSectors(dev, testSector, 1, readBuffer) == ERR_OK)
+                {
                     result->base.readableSectors++;
-                    if (doWriteTest || detectWp) {
+                    if (doWriteTest || detectWp)
+                    {
                         int writeResult = testSectorWrite(dev, ioOps, testSector,
-                            writeBuffer, verifyBuffer, backupBuffer);
-                        if (writeResult == 1) {
+                                                          writeBuffer, verifyBuffer, backupBuffer);
+                        if (writeResult == 1)
+                        {
                             result->writeErrors++;
                             addWpSector(result, testSector);
                         }
-                        else if (writeResult == 2) {
+                        else if (writeResult == 2)
                             result->readErrors++;
-                        }
-                        else if (writeResult == 3) {
+                        else if (writeResult == 3)
                             result->verifyErrors++;
-                        }
                     }
                 }
-                else {
+                else
+                {
                     result->readErrors++;
                     analyzerAddBadSector(&result->base, testSector);
                 }
             }
         }
         currentSector += sectorsToProcess;
-        if (progress) {
+        if (progress)
+        {
             uint64_t currentPercent = (currentSector * 100) / dev->sectorCount;
-            if (currentPercent > lastProgressPercent) {
+            if (currentPercent > lastProgressPercent)
+            {
                 progress(currentSector, dev->sectorCount, 0,
-                    doWriteTest ? "Write testing" : "Analyzing");
+                         doWriteTest ? "Write testing" : "Analyzing");
                 lastProgressPercent = currentPercent;
             }
         }
@@ -335,14 +359,14 @@ error_code_t analyzerScanDeviceExtended(device_t* dev,
     if (verifyBuffer) alignedFree(verifyBuffer);
     if (backupBuffer) alignedFree(backupBuffer);
     LOG_INFO("Extended analysis complete - Readable: %llu, Read errors: %llu, Write errors: %llu, Verify errors: %llu",
-        (unsigned long long)result->base.readableSectors,
-        (unsigned long long)result->readErrors,
-        (unsigned long long)result->writeErrors,
-        (unsigned long long)result->verifyErrors);
+             (unsigned long long)result->base.readableSectors,
+             (unsigned long long)result->readErrors,
+             (unsigned long long)result->writeErrors,
+             (unsigned long long)result->verifyErrors);
     return ERR_OK;
 }
 
-void analyzerPrintExtendedReport(const extended_analysis_result_t* result)
+void analyzerPrintExtendedReport(const extended_analysis_result_t *result)
 {
     if (!result) return;
     analyzerPrintReport(&result->base);
@@ -350,54 +374,58 @@ void analyzerPrintExtendedReport(const extended_analysis_result_t* result)
     printf("Read errors:        %llu\n", (unsigned long long)result->readErrors);
     printf("Write errors:       %llu\n", (unsigned long long)result->writeErrors);
     printf("Verify errors:      %llu\n", (unsigned long long)result->verifyErrors);
-    if (result->hasWpRegions) {
+    if (result->hasWpRegions)
+    {
         printf("\n*** WRITE-PROTECTED REGIONS DETECTED ***\n");
         printf("WP sectors count:   %llu\n", (unsigned long long)result->wpCount);
         printf("First WP sector:    %llu (offset 0x%llX, ~%.2f MB)\n",
-            (unsigned long long)result->firstWpSector,
-            (unsigned long long)(result->firstWpSector * SECTOR_SIZE),
-            (double)(result->firstWpSector * SECTOR_SIZE) / (1024.0 * 1024.0));
+               (unsigned long long)result->firstWpSector,
+               (unsigned long long)(result->firstWpSector * SECTOR_SIZE),
+               (double)(result->firstWpSector * SECTOR_SIZE) / (1024.0 * 1024.0));
         printf("Last WP sector:     %llu (offset 0x%llX, ~%.2f MB)\n",
-            (unsigned long long)result->lastWpSector,
-            (unsigned long long)(result->lastWpSector * SECTOR_SIZE),
-            (double)(result->lastWpSector * SECTOR_SIZE) / (1024.0 * 1024.0));
-        if (result->wpCount > 0) {
+               (unsigned long long)result->lastWpSector,
+               (unsigned long long)(result->lastWpSector * SECTOR_SIZE),
+               (double)(result->lastWpSector * SECTOR_SIZE) / (1024.0 * 1024.0));
+        if (result->wpCount > 0)
+        {
             printf("\nFirst 10 WP sectors:\n");
             uint64_t showCount = result->wpCount > 10 ? 10 : result->wpCount;
-            for (uint64_t index = 0; index < showCount; index++) {
+            for (uint64_t index = 0; index < showCount; index++)
                 printf("  Sector %llu\n", (unsigned long long)result->writeProtected[index]);
-            }
-            if (result->wpCount > 10) {
+            if (result->wpCount > 10)
                 printf("  ... and %llu more\n", (unsigned long long)(result->wpCount - 10));
-            }
         }
     }
-    else {
+    else
+    {
         printf("\nNo write-protected regions detected.\n");
     }
     printf("======================================\n\n");
 }
 
-bool analyzerQuickWpCheck(device_t* dev, uint64_t testSectors, uint64_t* firstWpSector)
+bool analyzerQuickWpCheck(device_t *dev, uint64_t testSectors, uint64_t *firstWpSector)
 {
     if (!dev || !dev->isOpen) return false;
     if (testSectors == 0) testSectors = 8192;
     if (testSectors > dev->sectorCount) testSectors = dev->sectorCount;
     LOG_INFO("Quick write-protection check (first %llu sectors)...", (unsigned long long)testSectors);
-    uint8_t* writeBuffer = alignedAlloc(SECTOR_SIZE);
-    uint8_t* readBuffer = alignedAlloc(SECTOR_SIZE);
-    uint8_t* backupBuffer = alignedAlloc(SECTOR_SIZE);
-    if (!writeBuffer || !readBuffer || !backupBuffer) {
+    uint8_t *writeBuffer = alignedAlloc(SECTOR_SIZE);
+    uint8_t *readBuffer = alignedAlloc(SECTOR_SIZE);
+    uint8_t *backupBuffer = alignedAlloc(SECTOR_SIZE);
+    if (!writeBuffer || !readBuffer || !backupBuffer)
+    {
         if (writeBuffer) alignedFree(writeBuffer);
         if (readBuffer) alignedFree(readBuffer);
         if (backupBuffer) alignedFree(backupBuffer);
         return false;
     }
-    const device_io_ops_t* ioOps = deviceIoGetOps();
+    const device_io_ops_t *ioOps = deviceIoGetOps();
     bool foundWp = false;
-    for (uint64_t sector = 0; sector < testSectors && !foundWp; sector += 128) {
+    for (uint64_t sector = 0; sector < testSectors && !foundWp; sector += 128)
+    {
         int writeResult = testSectorWrite(dev, ioOps, sector, writeBuffer, readBuffer, backupBuffer);
-        if (writeResult == 1) {
+        if (writeResult == 1)
+        {
             foundWp = true;
             if (firstWpSector) *firstWpSector = sector;
             LOG_WARN("Write-protection detected at sector %llu", (unsigned long long)sector);
