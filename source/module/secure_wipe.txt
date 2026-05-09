@@ -1,0 +1,2634 @@
+
+
+--- Contents of C:\Users\bogachenkove\Downloads\secure_wipe\analyzer.c ---
+
+#include "analyzer.h"
+#include "platform.h"
+
+error_code_t analyzerInitResult(analysis_result_t* result)
+{
+    if (!result) return ERR_INVALID_ARG;
+    memset(result, 0, sizeof(analysis_result_t));
+    result->badSectorsCapacity = 1024;
+    result->badSectors = (uint64_t*)malloc(result->badSectorsCapacity * sizeof(uint64_t));
+    return result->badSectors ? ERR_OK : ERR_MEMORY;
+}
+
+void analyzerFreeResult(analysis_result_t* result)
+{
+    if (result) {
+        free(result->badSectors);
+        result->badSectors = NULL;
+        result->badSectorsCapacity = 0;
+        result->badSectorCount = 0;
+    }
+}
+
+error_code_t analyzerAddBadSector(analysis_result_t* result, uint64_t sector)
+{
+    if (!result) return ERR_INVALID_ARG;
+    if (result->badSectorCount >= result->badSectorsCapacity) {
+        size_t newCapacity = result->badSectorsCapacity * 2;
+        if (newCapacity > MAX_BAD_SECTORS) newCapacity = MAX_BAD_SECTORS;
+        if (result->badSectorCount >= MAX_BAD_SECTORS) {
+            LOG_WARN("Maximum bad sector count reached");
+            return ERR_MEMORY;
+        }
+        uint64_t* newArray = (uint64_t*)realloc(result->badSectors, newCapacity * sizeof(uint64_t));
+        if (!newArray) return ERR_MEMORY;
+        result->badSectors = newArray;
+        result->badSectorsCapacity = newCapacity;
+    }
+    result->badSectors[result->badSectorCount++] = sector;
+    logBadSector(sector, "scan");
+    return ERR_OK;
+}
+
+bool analyzerIsBadSector(const analysis_result_t* result, uint64_t sector)
+{
+    if (!result || !result->badSectors) return false;
+    for (uint64_t index = 0; index < result->badSectorCount; index++) {
+        if (result->badSectors[index] == sector) return true;
+    }
+    return false;
+}
+
+error_code_t analyzerScanDevice(device_t* dev, analysis_result_t* result,
+    progress_callback_t progress)
+{
+    if (!dev || !dev->isOpen || !result) return ERR_INVALID_ARG;
+    LOG_INFO("Starting device analysis...");
+    LOG_INFO("Total sectors to scan: %llu", (unsigned long long)dev->sectorCount);
+    result->totalSectors = dev->sectorCount;
+    result->totalBytes = dev->sizeBytes;
+    result->readableSectors = 0;
+    uint8_t* readBuffer = (uint8_t*)alignedAlloc(BUFFER_SIZE);
+    if (!readBuffer) return ERR_MEMORY;
+    const device_io_ops_t* ioOps = deviceIoGetOps();
+    uint64_t currentSector = 0;
+    uint64_t lastProgressPercent = 0;
+    while (currentSector < dev->sectorCount) {
+        uint32_t sectorsToRead = BUFFER_SECTORS;
+        if (currentSector + sectorsToRead > dev->sectorCount) {
+            sectorsToRead = (uint32_t)(dev->sectorCount - currentSector);
+        }
+        error_code_t readError = ioOps->readSectors(dev, currentSector, sectorsToRead, readBuffer);
+        if (readError == ERR_OK) {
+            result->readableSectors += sectorsToRead;
+        }
+        else {
+            for (uint32_t offset = 0; offset < sectorsToRead; offset++) {
+                uint64_t sectorToCheck = currentSector + offset;
+                if (ioOps->readSectors(dev, sectorToCheck, 1, readBuffer) == ERR_OK) {
+                    result->readableSectors++;
+                }
+                else {
+                    analyzerAddBadSector(result, sectorToCheck);
+                }
+            }
+        }
+        currentSector += sectorsToRead;
+        if (progress) {
+            uint64_t currentPercent = (currentSector * 100) / dev->sectorCount;
+            if (currentPercent > lastProgressPercent) {
+                progress(currentSector, dev->sectorCount, 0, "Analyzing");
+                lastProgressPercent = currentPercent;
+            }
+        }
+    }
+    alignedFree(readBuffer);
+    LOG_INFO("Analysis complete - Readable: %llu, Bad: %llu",
+        (unsigned long long)result->readableSectors,
+        (unsigned long long)result->badSectorCount);
+    return ERR_OK;
+}
+
+void analyzerPrintReport(const analysis_result_t* result)
+{
+    if (!result) return;
+    char totalString[32], readableString[32];
+    formatBytes(result->totalBytes, totalString, sizeof(totalString));
+    formatBytes(result->readableSectors * SECTOR_SIZE, readableString, sizeof(readableString));
+    printf("\n========== ANALYSIS REPORT ==========\n");
+    printf("Total capacity:     %s\n", totalString);
+    printf("Total sectors:      %llu\n", (unsigned long long)result->totalSectors);
+    printf("Readable sectors:   %llu\n", (unsigned long long)result->readableSectors);
+    printf("Readable data:      %s\n", readableString);
+    printf("Bad sectors:        %llu\n", (unsigned long long)result->badSectorCount);
+    if (result->badSectorCount > 0) {
+        printf("\nBad sector addresses (first 20):\n");
+        uint64_t showCount = result->badSectorCount > 20 ? 20 : result->badSectorCount;
+        for (uint64_t index = 0; index < showCount; index++) {
+            printf("  Sector %llu (offset 0x%llX)\n",
+                (unsigned long long)result->badSectors[index],
+                (unsigned long long)(result->badSectors[index] * SECTOR_SIZE));
+        }
+        if (result->badSectorCount > 20) {
+            printf("  ... and %llu more\n", (unsigned long long)(result->badSectorCount - 20));
+        }
+    }
+    printf("======================================\n\n");
+}
+
+uint64_t analyzerVerifyWipe(device_t* dev, progress_callback_t progress)
+{
+    if (!dev || !dev->isOpen) return UINT64_MAX;
+    LOG_INFO("Starting wipe verification...");
+    uint8_t* readBuffer = (uint8_t*)alignedAlloc(BUFFER_SIZE);
+    if (!readBuffer) return UINT64_MAX;
+    const device_io_ops_t* ioOps = deviceIoGetOps();
+    uint64_t errorCount = 0;
+    uint64_t currentSector = 0;
+    uint64_t lastProgressPercent = 0;
+    while (currentSector < dev->sectorCount) {
+        uint32_t sectorsToRead = BUFFER_SECTORS;
+        if (currentSector + sectorsToRead > dev->sectorCount) {
+            sectorsToRead = (uint32_t)(dev->sectorCount - currentSector);
+        }
+        if (ioOps->readSectors(dev, currentSector, sectorsToRead, readBuffer) != ERR_OK) {
+            for (uint32_t offset = 0; offset < sectorsToRead; offset++) {
+                if (ioOps->readSectors(dev, currentSector + offset, 1, readBuffer) != ERR_OK) {
+                    errorCount++;
+                    logBadSector(currentSector + offset, "verification");
+                }
+            }
+        }
+        currentSector += sectorsToRead;
+        if (progress) {
+            uint64_t currentPercent = (currentSector * 100) / dev->sectorCount;
+            if (currentPercent > lastProgressPercent) {
+                progress(currentSector, dev->sectorCount, 0, "Verifying");
+                lastProgressPercent = currentPercent;
+            }
+        }
+    }
+    alignedFree(readBuffer);
+    LOG_INFO("Verification complete. Errors: %llu", (unsigned long long)errorCount);
+    return errorCount;
+}
+
+error_code_t analyzerInitExtendedResult(extended_analysis_result_t* result)
+{
+    if (!result) return ERR_INVALID_ARG;
+    memset(result, 0, sizeof(extended_analysis_result_t));
+    error_code_t baseError = analyzerInitResult(&result->base);
+    if (baseError != ERR_OK) return baseError;
+    result->wpCapacity = 1024;
+    result->writeProtected = (uint64_t*)malloc(result->wpCapacity * sizeof(uint64_t));
+    if (!result->writeProtected) {
+        analyzerFreeResult(&result->base);
+        return ERR_MEMORY;
+    }
+    result->firstWpSector = UINT64_MAX;
+    result->lastWpSector = 0;
+    return ERR_OK;
+}
+
+void analyzerFreeExtendedResult(extended_analysis_result_t* result)
+{
+    if (result) {
+        analyzerFreeResult(&result->base);
+        free(result->writeProtected);
+        result->writeProtected = NULL;
+        result->wpCapacity = 0;
+        result->wpCount = 0;
+    }
+}
+
+static error_code_t addWpSector(extended_analysis_result_t* result, uint64_t sector)
+{
+    if (!result) return ERR_INVALID_ARG;
+    if (result->wpCount >= result->wpCapacity) {
+        size_t newCapacity = result->wpCapacity * 2;
+        if (newCapacity > MAX_BAD_SECTORS) newCapacity = MAX_BAD_SECTORS;
+        uint64_t* newArray = (uint64_t*)realloc(result->writeProtected, newCapacity * sizeof(uint64_t));
+        if (!newArray) return ERR_MEMORY;
+        result->writeProtected = newArray;
+        result->wpCapacity = newCapacity;
+    }
+    result->writeProtected[result->wpCount++] = sector;
+    if (sector < result->firstWpSector) result->firstWpSector = sector;
+    if (sector > result->lastWpSector) result->lastWpSector = sector;
+    result->hasWpRegions = true;
+    return ERR_OK;
+}
+
+static int testSectorWrite(device_t* dev, const device_io_ops_t* ioOps,
+    uint64_t sector, uint8_t* writeBuffer,
+    uint8_t* readBuffer, uint8_t* backupBuffer)
+{
+    if (backupBuffer) ioOps->readSectors(dev, sector, 1, backupBuffer);
+    for (int byteIndex = 0; byteIndex < SECTOR_SIZE; byteIndex++) {
+        writeBuffer[byteIndex] = (uint8_t)((sector ^ 0xAA ^ byteIndex) & 0xFF);
+    }
+    if (ioOps->writeSectors(dev, sector, 1, writeBuffer) != ERR_OK) {
+        if (backupBuffer) ioOps->writeSectors(dev, sector, 1, backupBuffer);
+        return 1;
+    }
+    if (ioOps->readSectors(dev, sector, 1, readBuffer) != ERR_OK) {
+        if (backupBuffer) ioOps->writeSectors(dev, sector, 1, backupBuffer);
+        return 2;
+    }
+    if (memcmp(writeBuffer, readBuffer, SECTOR_SIZE) != 0) {
+        if (backupBuffer) ioOps->writeSectors(dev, sector, 1, backupBuffer);
+        return 3;
+    }
+    if (backupBuffer) ioOps->writeSectors(dev, sector, 1, backupBuffer);
+    return 0;
+}
+
+error_code_t analyzerScanDeviceExtended(device_t* dev,
+    extended_analysis_result_t* result,
+    analyze_flags_t flags,
+    progress_callback_t progress)
+{
+    if (!dev || !dev->isOpen || !result) return ERR_INVALID_ARG;
+    bool doWriteTest = (flags & ANALYZE_WRITE_TEST) != 0;
+    bool detectWp = (flags & ANALYZE_DETECT_WP) != 0 || doWriteTest;
+    if (doWriteTest) LOG_WARN("=== WRITE TEST MODE - DATA WILL BE DESTROYED! ===");
+    LOG_INFO("Starting extended analysis... Sectors: %llu", (unsigned long long)dev->sectorCount);
+    result->base.totalSectors = dev->sectorCount;
+    result->base.totalBytes = dev->sizeBytes;
+    result->base.readableSectors = 0;
+    uint8_t* readBuffer = (uint8_t*)alignedAlloc(BUFFER_SIZE);
+    uint8_t* writeBuffer = NULL, * verifyBuffer = NULL, * backupBuffer = NULL;
+    if (!readBuffer) return ERR_MEMORY;
+    if (doWriteTest || detectWp) {
+        writeBuffer = alignedAlloc(SECTOR_SIZE);
+        verifyBuffer = alignedAlloc(SECTOR_SIZE);
+        if (detectWp && !doWriteTest) backupBuffer = alignedAlloc(SECTOR_SIZE);
+        if (!writeBuffer || !verifyBuffer) {
+            alignedFree(readBuffer);
+            if (writeBuffer) alignedFree(writeBuffer);
+            if (verifyBuffer) alignedFree(verifyBuffer);
+            if (backupBuffer) alignedFree(backupBuffer);
+            return ERR_MEMORY;
+        }
+    }
+    const device_io_ops_t* ioOps = deviceIoGetOps();
+    uint64_t currentSector = 0;
+    uint64_t lastProgressPercent = 0;
+    while (currentSector < dev->sectorCount) {
+        uint32_t sectorsToProcess = BUFFER_SECTORS;
+        if (currentSector + sectorsToProcess > dev->sectorCount) {
+            sectorsToProcess = (uint32_t)(dev->sectorCount - currentSector);
+        }
+        error_code_t readError = ioOps->readSectors(dev, currentSector, sectorsToProcess, readBuffer);
+        if (readError == ERR_OK) {
+            result->base.readableSectors += sectorsToProcess;
+            if (doWriteTest || detectWp) {
+                uint32_t step = doWriteTest ? 1 : 64;
+                for (uint32_t offset = 0; offset < sectorsToProcess; offset += step) {
+                    uint64_t testSector = currentSector + offset;
+                    int writeResult = testSectorWrite(dev, ioOps, testSector,
+                        writeBuffer, verifyBuffer, backupBuffer);
+                    switch (writeResult) {
+                    case 1:
+                        result->writeErrors++;
+                        addWpSector(result, testSector);
+                        break;
+                    case 2:
+                        result->readErrors++;
+                        analyzerAddBadSector(&result->base, testSector);
+                        break;
+                    case 3:
+                        result->verifyErrors++;
+                        break;
+                    }
+                }
+            }
+        }
+        else {
+            for (uint32_t offset = 0; offset < sectorsToProcess; offset++) {
+                uint64_t testSector = currentSector + offset;
+                if (ioOps->readSectors(dev, testSector, 1, readBuffer) == ERR_OK) {
+                    result->base.readableSectors++;
+                    if (doWriteTest || detectWp) {
+                        int writeResult = testSectorWrite(dev, ioOps, testSector,
+                            writeBuffer, verifyBuffer, backupBuffer);
+                        if (writeResult == 1) {
+                            result->writeErrors++;
+                            addWpSector(result, testSector);
+                        }
+                        else if (writeResult == 2) {
+                            result->readErrors++;
+                        }
+                        else if (writeResult == 3) {
+                            result->verifyErrors++;
+                        }
+                    }
+                }
+                else {
+                    result->readErrors++;
+                    analyzerAddBadSector(&result->base, testSector);
+                }
+            }
+        }
+        currentSector += sectorsToProcess;
+        if (progress) {
+            uint64_t currentPercent = (currentSector * 100) / dev->sectorCount;
+            if (currentPercent > lastProgressPercent) {
+                progress(currentSector, dev->sectorCount, 0,
+                    doWriteTest ? "Write testing" : "Analyzing");
+                lastProgressPercent = currentPercent;
+            }
+        }
+    }
+    alignedFree(readBuffer);
+    if (writeBuffer) alignedFree(writeBuffer);
+    if (verifyBuffer) alignedFree(verifyBuffer);
+    if (backupBuffer) alignedFree(backupBuffer);
+    LOG_INFO("Extended analysis complete - Readable: %llu, Read errors: %llu, Write errors: %llu, Verify errors: %llu",
+        (unsigned long long)result->base.readableSectors,
+        (unsigned long long)result->readErrors,
+        (unsigned long long)result->writeErrors,
+        (unsigned long long)result->verifyErrors);
+    return ERR_OK;
+}
+
+void analyzerPrintExtendedReport(const extended_analysis_result_t* result)
+{
+    if (!result) return;
+    analyzerPrintReport(&result->base);
+    printf("========= EXTENDED ANALYSIS =========\n");
+    printf("Read errors:        %llu\n", (unsigned long long)result->readErrors);
+    printf("Write errors:       %llu\n", (unsigned long long)result->writeErrors);
+    printf("Verify errors:      %llu\n", (unsigned long long)result->verifyErrors);
+    if (result->hasWpRegions) {
+        printf("\n*** WRITE-PROTECTED REGIONS DETECTED ***\n");
+        printf("WP sectors count:   %llu\n", (unsigned long long)result->wpCount);
+        printf("First WP sector:    %llu (offset 0x%llX, ~%.2f MB)\n",
+            (unsigned long long)result->firstWpSector,
+            (unsigned long long)(result->firstWpSector * SECTOR_SIZE),
+            (double)(result->firstWpSector * SECTOR_SIZE) / (1024.0 * 1024.0));
+        printf("Last WP sector:     %llu (offset 0x%llX, ~%.2f MB)\n",
+            (unsigned long long)result->lastWpSector,
+            (unsigned long long)(result->lastWpSector * SECTOR_SIZE),
+            (double)(result->lastWpSector * SECTOR_SIZE) / (1024.0 * 1024.0));
+        if (result->wpCount > 0) {
+            printf("\nFirst 10 WP sectors:\n");
+            uint64_t showCount = result->wpCount > 10 ? 10 : result->wpCount;
+            for (uint64_t index = 0; index < showCount; index++) {
+                printf("  Sector %llu\n", (unsigned long long)result->writeProtected[index]);
+            }
+            if (result->wpCount > 10) {
+                printf("  ... and %llu more\n", (unsigned long long)(result->wpCount - 10));
+            }
+        }
+    }
+    else {
+        printf("\nNo write-protected regions detected.\n");
+    }
+    printf("======================================\n\n");
+}
+
+bool analyzerQuickWpCheck(device_t* dev, uint64_t testSectors, uint64_t* firstWpSector)
+{
+    if (!dev || !dev->isOpen) return false;
+    if (testSectors == 0) testSectors = 8192;
+    if (testSectors > dev->sectorCount) testSectors = dev->sectorCount;
+    LOG_INFO("Quick write-protection check (first %llu sectors)...", (unsigned long long)testSectors);
+    uint8_t* writeBuffer = alignedAlloc(SECTOR_SIZE);
+    uint8_t* readBuffer = alignedAlloc(SECTOR_SIZE);
+    uint8_t* backupBuffer = alignedAlloc(SECTOR_SIZE);
+    if (!writeBuffer || !readBuffer || !backupBuffer) {
+        if (writeBuffer) alignedFree(writeBuffer);
+        if (readBuffer) alignedFree(readBuffer);
+        if (backupBuffer) alignedFree(backupBuffer);
+        return false;
+    }
+    const device_io_ops_t* ioOps = deviceIoGetOps();
+    bool foundWp = false;
+    for (uint64_t sector = 0; sector < testSectors && !foundWp; sector += 128) {
+        int writeResult = testSectorWrite(dev, ioOps, sector, writeBuffer, readBuffer, backupBuffer);
+        if (writeResult == 1) {
+            foundWp = true;
+            if (firstWpSector) *firstWpSector = sector;
+            LOG_WARN("Write-protection detected at sector %llu", (unsigned long long)sector);
+        }
+    }
+    alignedFree(writeBuffer);
+    alignedFree(readBuffer);
+    alignedFree(backupBuffer);
+    if (!foundWp) LOG_INFO("No write-protection detected in tested range");
+    return foundWp;
+}
+
+--- Contents of C:\Users\bogachenkove\Downloads\secure_wipe\analyzer.h ---
+
+#ifndef ANALYZER_H
+#define ANALYZER_H
+
+#include "common.h"
+#include "device_io.h"
+
+error_code_t analyzerInitResult(analysis_result_t* result);
+void analyzerFreeResult(analysis_result_t* result);
+error_code_t analyzerScanDevice(device_t* dev, analysis_result_t* result,
+    progress_callback_t progress);
+error_code_t analyzerAddBadSector(analysis_result_t* result, uint64_t sector);
+bool analyzerIsBadSector(const analysis_result_t* result, uint64_t sector);
+void analyzerPrintReport(const analysis_result_t* result);
+uint64_t analyzerVerifyWipe(device_t* dev, progress_callback_t progress);
+
+typedef enum {
+    ANALYZE_READ_ONLY = 0x00,
+    ANALYZE_WRITE_TEST = 0x01,
+    ANALYZE_DETECT_WP = 0x02
+} analyze_flags_t;
+
+typedef struct {
+    analysis_result_t base;
+    uint64_t* writeProtected;
+    uint64_t  wpCount;
+    uint64_t  wpCapacity;
+    uint64_t  writeErrors;
+    uint64_t  readErrors;
+    uint64_t  verifyErrors;
+    uint64_t  firstWpSector;
+    uint64_t  lastWpSector;
+    bool      hasWpRegions;
+} extended_analysis_result_t;
+
+error_code_t analyzerInitExtendedResult(extended_analysis_result_t* result);
+void analyzerFreeExtendedResult(extended_analysis_result_t* result);
+error_code_t analyzerScanDeviceExtended(device_t* dev,
+    extended_analysis_result_t* result,
+    analyze_flags_t flags,
+    progress_callback_t progress);
+void analyzerPrintExtendedReport(const extended_analysis_result_t* result);
+bool analyzerQuickWpCheck(device_t* dev, uint64_t testSectors,
+    uint64_t* firstWpSector);
+
+#endif
+
+--- Contents of C:\Users\bogachenkove\Downloads\secure_wipe\common.c ---
+
+#include "common.h"
+#include <stdarg.h>
+
+logger_t g_logger = { NULL, false, "" };
+
+void logInit(const char* logPath, bool verbose)
+{
+    g_logger.verbose = verbose;
+    if (logPath && strlen(logPath) > 0) {
+        strncpy(g_logger.logPath, logPath, MAX_PATH_LEN - 1);
+        g_logger.logFile = fopen(logPath, "w");
+        if (!g_logger.logFile) {
+            fprintf(stderr, "Warning: Cannot open log file: %s\n", logPath);
+        }
+    }
+}
+
+void logClose(void)
+{
+    if (g_logger.logFile) {
+        fclose(g_logger.logFile);
+        g_logger.logFile = NULL;
+    }
+}
+
+void logMessage(const char* level, const char* fmt, ...)
+{
+    char timestamp[64];
+    time_t now = time(NULL);
+    struct tm* tmInfo = localtime(&now);
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", tmInfo);
+
+    va_list arguments;
+
+    if (g_logger.verbose || strcmp(level, "ERROR") == 0) {
+        printf("[%s] [%s] ", timestamp, level);
+        va_start(arguments, fmt);
+        vprintf(fmt, arguments);
+        va_end(arguments);
+        printf("\n");
+        fflush(stdout);
+    }
+
+    if (g_logger.logFile) {
+        fprintf(g_logger.logFile, "[%s] [%s] ", timestamp, level);
+        va_start(arguments, fmt);
+        vfprintf(g_logger.logFile, fmt, arguments);
+        va_end(arguments);
+        fprintf(g_logger.logFile, "\n");
+        fflush(g_logger.logFile);
+    }
+}
+
+void logBadSector(uint64_t sector, const char* operation)
+{
+    logMessage("WARN", "Bad sector detected: %llu during %s",
+        (unsigned long long)sector, operation);
+}
+
+const char* errorToString(error_code_t err)
+{
+    switch (err) {
+    case ERR_OK:           return "Success";
+    case ERR_OPEN_DEVICE:  return "Failed to open device";
+    case ERR_READ_DEVICE:  return "Failed to read device";
+    case ERR_WRITE_DEVICE: return "Failed to write device";
+    case ERR_SEEK_DEVICE:  return "Failed to seek device";
+    case ERR_GET_SIZE:     return "Failed to get device size";
+    case ERR_MEMORY:       return "Memory allocation failed";
+    case ERR_PERMISSION:   return "Insufficient permissions";
+    case ERR_INVALID_ARG:  return "Invalid argument";
+    case ERR_RANDOM_GEN:   return "Random generation failed";
+    default:               return "Unknown error";
+    }
+}
+
+void formatBytes(uint64_t bytes, char* buffer, size_t bufferSize)
+{
+    const char* units[] = { "B", "KB", "MB", "GB", "TB" };
+    int unitIndex = 0;
+    double size = (double)bytes;
+
+    while (size >= 1024.0 && unitIndex < 4) {
+        size /= 1024.0;
+        unitIndex++;
+    }
+
+    snprintf(buffer, bufferSize, "%.2f %s", size, units[unitIndex]);
+}
+
+void formatTime(time_t seconds, char* buffer, size_t bufferSize)
+{
+    int hours = (int)(seconds / 3600);
+    int minutes = (int)((seconds % 3600) / 60);
+    int secs = (int)(seconds % 60);
+
+    if (hours > 0) {
+        snprintf(buffer, bufferSize, "%dh %dm %ds", hours, minutes, secs);
+    }
+    else if (minutes > 0) {
+        snprintf(buffer, bufferSize, "%dm %ds", minutes, secs);
+    }
+    else {
+        snprintf(buffer, bufferSize, "%ds", secs);
+    }
+}
+
+--- Contents of C:\Users\bogachenkove\Downloads\secure_wipe\common.h ---
+
+#ifndef COMMON_H
+#define COMMON_H
+
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#define SECTOR_SIZE         512
+#define BUFFER_SECTORS      1024
+#define BUFFER_SIZE         (SECTOR_SIZE * BUFFER_SECTORS)
+#define MAX_PATH_LEN        260
+#define MAX_BAD_SECTORS     100000
+
+typedef enum {
+    ERR_OK = 0,
+    ERR_OPEN_DEVICE,
+    ERR_READ_DEVICE,
+    ERR_WRITE_DEVICE,
+    ERR_SEEK_DEVICE,
+    ERR_GET_SIZE,
+    ERR_MEMORY,
+    ERR_PERMISSION,
+    ERR_INVALID_ARG,
+    ERR_RANDOM_GEN,
+    ERR_UNKNOWN
+} error_code_t;
+
+typedef struct {
+    uint64_t totalSectors;
+    uint64_t totalBytes;
+    uint64_t readableSectors;
+    uint64_t badSectorCount;
+    uint64_t* badSectors;
+    size_t badSectorsCapacity;
+} analysis_result_t;
+
+typedef struct {
+    uint64_t sectorsWiped;
+    uint64_t sectorsFailed;
+    uint64_t currentPass;
+    uint64_t totalPasses;
+    time_t startTime;
+    time_t endTime;
+} wipe_stats_t;
+
+typedef void (*progress_callback_t)(uint64_t current, uint64_t total, int pass, const char* phase);
+
+typedef struct {
+    FILE* logFile;
+    bool verbose;
+    char logPath[MAX_PATH_LEN];
+} logger_t;
+
+extern logger_t g_logger;
+
+void logInit(const char* logPath, bool verbose);
+void logClose(void);
+void logMessage(const char* level, const char* fmt, ...);
+void logBadSector(uint64_t sector, const char* operation);
+
+#define LOG_INFO(...)  logMessage("INFO", __VA_ARGS__)
+#define LOG_WARN(...)  logMessage("WARN", __VA_ARGS__)
+#define LOG_ERROR(...) logMessage("ERROR", __VA_ARGS__)
+
+const char* errorToString(error_code_t err);
+void formatBytes(uint64_t bytes, char* buffer, size_t bufferSize);
+void formatTime(time_t seconds, char* buffer, size_t bufferSize);
+
+#endif
+
+--- Contents of C:\Users\bogachenkove\Downloads\secure_wipe\device_io.c ---
+
+#include "device_io.h"
+
+#ifdef _WIN32
+static error_code_t winDeviceOpen(device_t* dev, const char* path, bool readOnly)
+{
+    if (!dev || !path) return ERR_INVALID_ARG;
+    memset(dev, 0, sizeof(device_t));
+    strncpy(dev->path, path, MAX_PATH_LEN - 1);
+    dev->readOnly = readOnly;
+    dev->sectorSize = SECTOR_SIZE;
+
+    DWORD access = GENERIC_READ;
+    if (!readOnly) access |= GENERIC_WRITE;
+
+    dev->handle = CreateFileA(path, access, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL, OPEN_EXISTING,
+        FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
+    if (dev->handle == INVALID_HANDLE_VALUE) {
+        DWORD err = GetLastError();
+        if (err == ERROR_ACCESS_DENIED) return ERR_PERMISSION;
+        return ERR_OPEN_DEVICE;
+    }
+    dev->isOpen = true;
+    LOG_INFO("Opened device: %s (mode: %s)", path, readOnly ? "read-only" : "read-write");
+
+    DISK_GEOMETRY_EX geom;
+    DWORD bytesReturned;
+    if (DeviceIoControl(dev->handle, IOCTL_DISK_GET_DRIVE_GEOMETRY_EX,
+        NULL, 0, &geom, sizeof(geom), &bytesReturned, NULL)) {
+        dev->sizeBytes = geom.DiskSize.QuadPart;
+        dev->sectorCount = dev->sizeBytes / dev->sectorSize;
+    }
+    else {
+        GET_LENGTH_INFORMATION lenInfo;
+        if (DeviceIoControl(dev->handle, IOCTL_DISK_GET_LENGTH_INFO,
+            NULL, 0, &lenInfo, sizeof(lenInfo), &bytesReturned, NULL)) {
+            dev->sizeBytes = lenInfo.Length.QuadPart;
+            dev->sectorCount = dev->sizeBytes / dev->sectorSize;
+        }
+        else {
+            CloseHandle(dev->handle);
+            dev->isOpen = false;
+            return ERR_GET_SIZE;
+        }
+    }
+    char sizeStr[32];
+    formatBytes(dev->sizeBytes, sizeStr, sizeof(sizeStr));
+    LOG_INFO("Device size: %s (%llu sectors)", sizeStr, (unsigned long long)dev->sectorCount);
+    return ERR_OK;
+}
+
+static error_code_t winDeviceClose(device_t* dev)
+{
+    if (!dev) return ERR_INVALID_ARG;
+    if (dev->isOpen && dev->handle != INVALID_HANDLE_VALUE) {
+        FlushFileBuffers(dev->handle);
+        CloseHandle(dev->handle);
+        dev->handle = INVALID_HANDLE_VALUE;
+        dev->isOpen = false;
+        LOG_INFO("Device closed: %s", dev->path);
+    }
+    return ERR_OK;
+}
+
+static error_code_t winDeviceReadSectors(device_t* dev, uint64_t startSector,
+    uint32_t count, uint8_t* buffer)
+{
+    if (!dev || !dev->isOpen || !buffer) return ERR_INVALID_ARG;
+    LARGE_INTEGER offset;
+    offset.QuadPart = (LONGLONG)startSector * dev->sectorSize;
+    if (!SetFilePointerEx(dev->handle, offset, NULL, FILE_BEGIN)) return ERR_SEEK_DEVICE;
+    DWORD bytesToRead = count * dev->sectorSize;
+    DWORD bytesRead = 0;
+    if (!ReadFile(dev->handle, buffer, bytesToRead, &bytesRead, NULL)) return ERR_READ_DEVICE;
+    if (bytesRead != bytesToRead) return ERR_READ_DEVICE;
+    return ERR_OK;
+}
+
+static error_code_t winDeviceWriteSectors(device_t* dev, uint64_t startSector,
+    uint32_t count, const uint8_t* buffer)
+{
+    if (!dev || !dev->isOpen || !buffer || dev->readOnly) return ERR_INVALID_ARG;
+    LARGE_INTEGER offset;
+    offset.QuadPart = (LONGLONG)startSector * dev->sectorSize;
+    if (!SetFilePointerEx(dev->handle, offset, NULL, FILE_BEGIN)) return ERR_SEEK_DEVICE;
+    DWORD bytesToWrite = count * dev->sectorSize;
+    DWORD bytesWritten = 0;
+    if (!WriteFile(dev->handle, buffer, bytesToWrite, &bytesWritten, NULL)) return ERR_WRITE_DEVICE;
+    if (bytesWritten != bytesToWrite) return ERR_WRITE_DEVICE;
+    return ERR_OK;
+}
+
+static error_code_t winDeviceFlush(device_t* dev)
+{
+    if (!dev || !dev->isOpen) return ERR_INVALID_ARG;
+    FlushFileBuffers(dev->handle);
+    return ERR_OK;
+}
+
+static error_code_t winDeviceGetSize(device_t* dev)
+{
+    return (dev && dev->sizeBytes > 0) ? ERR_OK : ERR_GET_SIZE;
+}
+
+static const device_io_ops_t winIoOps = {
+    .open = winDeviceOpen,
+    .close = winDeviceClose,
+    .readSectors = winDeviceReadSectors,
+    .writeSectors = winDeviceWriteSectors,
+    .getSize = winDeviceGetSize,
+    .flush = winDeviceFlush
+};
+
+const device_io_ops_t* deviceIoGetOps(void) { return &winIoOps; }
+
+#else
+
+static error_code_t posixDeviceOpen(device_t* dev, const char* path, bool readOnly)
+{
+    if (!dev || !path) return ERR_INVALID_ARG;
+    memset(dev, 0, sizeof(device_t));
+    strncpy(dev->path, path, MAX_PATH_LEN - 1);
+    dev->readOnly = readOnly;
+    dev->sectorSize = SECTOR_SIZE;
+    int flags = readOnly ? O_RDONLY : O_RDWR;
+    flags |= O_SYNC | O_DIRECT;
+    dev->handle = open(path, flags);
+    if (dev->handle < 0) {
+        if (errno == EACCES || errno == EPERM) return ERR_PERMISSION;
+        return ERR_OPEN_DEVICE;
+    }
+    dev->isOpen = true;
+    LOG_INFO("Opened device: %s (mode: %s)", path, readOnly ? "read-only" : "read-write");
+
+    uint64_t size = 0;
+    if (ioctl(dev->handle, BLKGETSIZE64, &size) == 0) {
+        dev->sizeBytes = size;
+        dev->sectorCount = size / dev->sectorSize;
+    }
+    else {
+        off_t end = lseek(dev->handle, 0, SEEK_END);
+        if (end > 0) {
+            dev->sizeBytes = (uint64_t)end;
+            dev->sectorCount = dev->sizeBytes / dev->sectorSize;
+            lseek(dev->handle, 0, SEEK_SET);
+        }
+        else {
+            close(dev->handle);
+            dev->isOpen = false;
+            return ERR_GET_SIZE;
+        }
+    }
+    char sizeStr[32];
+    formatBytes(dev->sizeBytes, sizeStr, sizeof(sizeStr));
+    LOG_INFO("Device size: %s (%llu sectors)", sizeStr, (unsigned long long)dev->sectorCount);
+    return ERR_OK;
+}
+
+static error_code_t posixDeviceClose(device_t* dev)
+{
+    if (!dev) return ERR_INVALID_ARG;
+    if (dev->isOpen && dev->handle >= 0) {
+        fsync(dev->handle);
+        close(dev->handle);
+        dev->handle = -1;
+        dev->isOpen = false;
+        LOG_INFO("Device closed: %s", dev->path);
+    }
+    return ERR_OK;
+}
+
+static error_code_t posixDeviceReadSectors(device_t* dev, uint64_t startSector,
+    uint32_t count, uint8_t* buffer)
+{
+    if (!dev || !dev->isOpen || !buffer) return ERR_INVALID_ARG;
+    off_t offset = (off_t)startSector * dev->sectorSize;
+    if (lseek(dev->handle, offset, SEEK_SET) != offset) return ERR_SEEK_DEVICE;
+    size_t bytesToRead = (size_t)count * dev->sectorSize;
+    ssize_t bytesRead = read(dev->handle, buffer, bytesToRead);
+    if (bytesRead < 0 || (size_t)bytesRead != bytesToRead) return ERR_READ_DEVICE;
+    return ERR_OK;
+}
+
+static error_code_t posixDeviceWriteSectors(device_t* dev, uint64_t startSector,
+    uint32_t count, const uint8_t* buffer)
+{
+    if (!dev || !dev->isOpen || !buffer || dev->readOnly) return ERR_INVALID_ARG;
+    off_t offset = (off_t)startSector * dev->sectorSize;
+    if (lseek(dev->handle, offset, SEEK_SET) != offset) return ERR_SEEK_DEVICE;
+    size_t bytesToWrite = (size_t)count * dev->sectorSize;
+    ssize_t bytesWritten = write(dev->handle, buffer, bytesToWrite);
+    if (bytesWritten < 0 || (size_t)bytesWritten != bytesToWrite) return ERR_WRITE_DEVICE;
+    return ERR_OK;
+}
+
+static error_code_t posixDeviceFlush(device_t* dev)
+{
+    if (!dev || !dev->isOpen) return ERR_INVALID_ARG;
+    fsync(dev->handle);
+    return ERR_OK;
+}
+
+static error_code_t posixDeviceGetSize(device_t* dev)
+{
+    return (dev && dev->sizeBytes > 0) ? ERR_OK : ERR_GET_SIZE;
+}
+
+static const device_io_ops_t posixIoOps = {
+    .open = posixDeviceOpen,
+    .close = posixDeviceClose,
+    .readSectors = posixDeviceReadSectors,
+    .writeSectors = posixDeviceWriteSectors,
+    .getSize = posixDeviceGetSize,
+    .flush = posixDeviceFlush
+};
+
+const device_io_ops_t* deviceIoGetOps(void) { return &posixIoOps; }
+
+#endif
+
+error_code_t deviceOpen(device_t* dev, const char* path, bool readOnly)
+{
+    return deviceIoGetOps()->open(dev, path, readOnly);
+}
+
+error_code_t deviceClose(device_t* dev)
+{
+    return deviceIoGetOps()->close(dev);
+}
+
+error_code_t deviceReadSectors(device_t* dev, uint64_t startSector,
+    uint32_t count, uint8_t* buffer)
+{
+    return deviceIoGetOps()->readSectors(dev, startSector, count, buffer);
+}
+
+error_code_t deviceWriteSectors(device_t* dev, uint64_t startSector,
+    uint32_t count, const uint8_t* buffer)
+{
+    return deviceIoGetOps()->writeSectors(dev, startSector, count, buffer);
+}
+
+--- Contents of C:\Users\bogachenkove\Downloads\secure_wipe\device_io.h ---
+
+#ifndef DEVICE_IO_H
+#define DEVICE_IO_H
+
+#include "platform.h"
+
+typedef struct {
+    device_handle_t handle;
+    char path[MAX_PATH_LEN];
+    uint64_t sizeBytes;
+    uint64_t sectorCount;
+    uint32_t sectorSize;
+    bool isOpen;
+    bool readOnly;
+} device_t;
+
+typedef struct {
+    error_code_t(*open)(device_t* dev, const char* path, bool readOnly);
+    error_code_t(*close)(device_t* dev);
+    error_code_t(*readSectors)(device_t* dev, uint64_t startSector, uint32_t count, uint8_t* buffer);
+    error_code_t(*writeSectors)(device_t* dev, uint64_t startSector, uint32_t count, const uint8_t* buffer);
+    error_code_t(*getSize)(device_t* dev);
+    error_code_t(*flush)(device_t* dev);
+} device_io_ops_t;
+
+const device_io_ops_t* deviceIoGetOps(void);
+error_code_t deviceOpen(device_t* dev, const char* path, bool readOnly);
+error_code_t deviceClose(device_t* dev);
+error_code_t deviceReadSectors(device_t* dev, uint64_t startSector, uint32_t count, uint8_t* buffer);
+error_code_t deviceWriteSectors(device_t* dev, uint64_t startSector, uint32_t count, const uint8_t* buffer);
+
+#endif
+
+--- Contents of C:\Users\bogachenkove\Downloads\secure_wipe\disk_scanner.c ---
+
+#include "disk_scanner.h"
+#ifdef _WIN32
+#include <windows.h>
+#include <ntddscsi.h>
+#include <cfgmgr32.h>
+#pragma comment(lib, "cfgmgr32.lib")
+#endif
+
+const char* diskTypeToString(disk_type_t type)
+{
+    switch (type) {
+    case DISK_TYPE_HDD:      return "HDD";
+    case DISK_TYPE_SSD:      return "SSD";
+    case DISK_TYPE_USB:      return "USB";
+    case DISK_TYPE_NVME:     return "NVMe";
+    case DISK_TYPE_SD_CARD:  return "SD Card";
+    case DISK_TYPE_OPTICAL:  return "Optical";
+    case DISK_TYPE_VIRTUAL:  return "Virtual";
+    default:                 return "Unknown";
+    }
+}
+
+bool diskScannerIsSafeToWipe(const disk_info_t* info)
+{
+    if (!info) return false;
+    return !info->isSystem && !info->isBoot;
+}
+
+const disk_info_t* diskScannerGetByIndex(const disk_scan_result_t* result, int index)
+{
+    if (!result || index < 1 || index > result->count) return NULL;
+    return &result->disks[index - 1];
+}
+
+#ifdef _WIN32
+
+static disk_type_t getDiskTypeFromBus(STORAGE_BUS_TYPE busType, bool isRemovable)
+{
+    switch (busType) {
+    case BusTypeUsb: return DISK_TYPE_USB;
+    case BusTypeNvme: return DISK_TYPE_NVME;
+    case BusTypeSata:
+    case BusTypeAta: return isRemovable ? DISK_TYPE_USB : DISK_TYPE_HDD;
+    case BusTypeSd:
+    case BusTypeMmc: return DISK_TYPE_SD_CARD;
+    case BusTypeVirtual:
+    case BusTypeFileBackedVirtual: return DISK_TYPE_VIRTUAL;
+    case BusTypeAtapi: return DISK_TYPE_OPTICAL;
+    default: return DISK_TYPE_UNKNOWN;
+    }
+}
+
+static error_code_t getDiskInfoWindows(int diskNumber, disk_info_t* info)
+{
+    char devicePath[64];
+    snprintf(devicePath, sizeof(devicePath), "\\\\.\\PhysicalDrive%d", diskNumber);
+    HANDLE deviceHandle = CreateFileA(devicePath, GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL, OPEN_EXISTING, 0, NULL);
+    if (deviceHandle == INVALID_HANDLE_VALUE) return ERR_OPEN_DEVICE;
+    memset(info, 0, sizeof(disk_info_t));
+    strncpy(info->devicePath, devicePath, MAX_PATH_LEN - 1);
+    info->diskNumber = diskNumber;
+    info->sectorSize = SECTOR_SIZE;
+    DWORD bytesReturned;
+    DISK_GEOMETRY_EX geometry;
+    if (DeviceIoControl(deviceHandle, IOCTL_DISK_GET_DRIVE_GEOMETRY_EX,
+        NULL, 0, &geometry, sizeof(geometry), &bytesReturned, NULL)) {
+        info->sizeBytes = geometry.DiskSize.QuadPart;
+        info->sectorSize = geometry.Geometry.BytesPerSector;
+    }
+    STORAGE_PROPERTY_QUERY query;
+    memset(&query, 0, sizeof(query));
+    query.PropertyId = StorageDeviceProperty;
+    query.QueryType = PropertyStandardQuery;
+    uint8_t buffer[4096];
+    if (DeviceIoControl(deviceHandle, IOCTL_STORAGE_QUERY_PROPERTY,
+        &query, sizeof(query), buffer, sizeof(buffer),
+        &bytesReturned, NULL)) {
+        STORAGE_DEVICE_DESCRIPTOR* descriptor = (STORAGE_DEVICE_DESCRIPTOR*)buffer;
+        info->isRemovable = descriptor->RemovableMedia;
+        info->type = getDiskTypeFromBus(descriptor->BusType, info->isRemovable);
+        if (descriptor->VendorIdOffset > 0) {
+            char* vendor = (char*)buffer + descriptor->VendorIdOffset;
+            strncpy(info->vendor, vendor, sizeof(info->vendor) - 1);
+            char* end = info->vendor + strlen(info->vendor) - 1;
+            while (end > info->vendor && (*end == ' ' || *end == '\0')) *end-- = '\0';
+        }
+        if (descriptor->ProductIdOffset > 0) {
+            char* product = (char*)buffer + descriptor->ProductIdOffset;
+            strncpy(info->model, product, sizeof(info->model) - 1);
+            char* end = info->model + strlen(info->model) - 1;
+            while (end > info->model && (*end == ' ' || *end == '\0')) *end-- = '\0';
+        }
+        if (descriptor->SerialNumberOffset > 0 && descriptor->SerialNumberOffset < bytesReturned) {
+            char* serial = (char*)buffer + descriptor->SerialNumberOffset;
+            strncpy(info->serial, serial, sizeof(info->serial) - 1);
+            char* end = info->serial + strlen(info->serial) - 1;
+            while (end > info->serial && (*end == ' ' || *end == '\0')) *end-- = '\0';
+        }
+        switch (descriptor->BusType) {
+        case BusTypeUsb:   strncpy(info->busType, "USB", sizeof(info->busType)); break;
+        case BusTypeSata:  strncpy(info->busType, "SATA", sizeof(info->busType)); break;
+        case BusTypeNvme:  strncpy(info->busType, "NVMe", sizeof(info->busType)); break;
+        case BusTypeAta:   strncpy(info->busType, "ATA", sizeof(info->busType)); break;
+        case BusTypeSd:    strncpy(info->busType, "SD", sizeof(info->busType)); break;
+        case BusTypeScsi:  strncpy(info->busType, "SCSI", sizeof(info->busType)); break;
+        default:           strncpy(info->busType, "Unknown", sizeof(info->busType)); break;
+        }
+    }
+    if (strlen(info->vendor) && strlen(info->model)) {
+        snprintf(info->friendlyName, sizeof(info->friendlyName), "%s %s", info->vendor, info->model);
+    }
+    else if (strlen(info->model)) {
+        strncpy(info->friendlyName, info->model, sizeof(info->friendlyName) - 1);
+    }
+    else {
+        snprintf(info->friendlyName, sizeof(info->friendlyName), "Disk %d", diskNumber);
+    }
+    char systemDrive[4] = "C:";
+    GetEnvironmentVariableA("SystemDrive", systemDrive, sizeof(systemDrive));
+    char volumePath[64];
+    snprintf(volumePath, sizeof(volumePath), "\\\\.\\%s", systemDrive);
+    HANDLE volumeHandle = CreateFileA(volumePath, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL, OPEN_EXISTING, 0, NULL);
+    if (volumeHandle != INVALID_HANDLE_VALUE) {
+        VOLUME_DISK_EXTENTS extents;
+        if (DeviceIoControl(volumeHandle, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS,
+            NULL, 0, &extents, sizeof(extents), &bytesReturned, NULL)) {
+            if (extents.NumberOfDiskExtents > 0 && (int)extents.Extents[0].DiskNumber == diskNumber) {
+                info->isSystem = true;
+                info->isBoot = true;
+            }
+        }
+        CloseHandle(volumeHandle);
+    }
+    CloseHandle(deviceHandle);
+    return ERR_OK;
+}
+
+error_code_t diskScannerScan(disk_scan_result_t* result)
+{
+    if (!result) return ERR_INVALID_ARG;
+    memset(result, 0, sizeof(disk_scan_result_t));
+    for (int diskIndex = 0; diskIndex < MAX_DISKS; diskIndex++) {
+        disk_info_t info;
+        if (getDiskInfoWindows(diskIndex, &info) == ERR_OK && info.sizeBytes > 0) {
+            result->disks[result->count++] = info;
+        }
+    }
+    return (result->count > 0) ? ERR_OK : ERR_OPEN_DEVICE;
+}
+
+error_code_t diskScannerGetInfo(const char* devicePath, disk_info_t* info)
+{
+    if (!devicePath || !info) return ERR_INVALID_ARG;
+    int diskNumber = -1;
+    if (sscanf(devicePath, "\\\\.\\PhysicalDrive%d", &diskNumber) == 1) {
+        return getDiskInfoWindows(diskNumber, info);
+    }
+    return ERR_INVALID_ARG;
+}
+
+#else
+
+#include <dirent.h>
+#include <sys/sysmacros.h>
+#include <mntent.h>
+
+static bool readSysfsString(const char* path, char* buffer, size_t size)
+{
+    FILE* file = fopen(path, "r");
+    if (!file) return false;
+    if (fgets(buffer, (int)size, file) != NULL) {
+        size_t length = strlen(buffer);
+        if (length && buffer[length - 1] == '\n') buffer[length - 1] = '\0';
+        fclose(file);
+        return true;
+    }
+    fclose(file);
+    return false;
+}
+
+static uint64_t readSysfsUint64(const char* path)
+{
+    char buffer[64];
+    return readSysfsString(path, buffer, sizeof(buffer)) ? strtoull(buffer, NULL, 10) : 0;
+}
+
+static disk_type_t detectDiskTypeLinux(const char* deviceName)
+{
+    char path[512], stringBuffer[256];
+    if (strncmp(deviceName, "nvme", 4) == 0) return DISK_TYPE_NVME;
+    if (strncmp(deviceName, "mmcblk", 6) == 0) return DISK_TYPE_SD_CARD;
+    if (strncmp(deviceName, "sr", 2) == 0) return DISK_TYPE_OPTICAL;
+    snprintf(path, sizeof(path), "/sys/block/%s/removable", deviceName);
+    if (readSysfsString(path, stringBuffer, sizeof(stringBuffer)) && stringBuffer[0] == '1') {
+        return DISK_TYPE_USB;
+    }
+    snprintf(path, sizeof(path), "/sys/block/%s/device/../../driver", deviceName);
+    char resolved[PATH_MAX];
+    if (realpath(path, resolved) && strstr(resolved, "usb")) return DISK_TYPE_USB;
+    snprintf(path, sizeof(path), "/sys/block/%s/queue/rotational", deviceName);
+    if (readSysfsString(path, stringBuffer, sizeof(stringBuffer))) {
+        return stringBuffer[0] == '0' ? DISK_TYPE_SSD : DISK_TYPE_HDD;
+    }
+    return DISK_TYPE_UNKNOWN;
+}
+
+static bool isRealDisk(const char* name)
+{
+    if (strncmp(name, "loop", 4) == 0) return false;
+    if (strncmp(name, "ram", 3) == 0) return false;
+    if (strncmp(name, "dm-", 3) == 0) return false;
+    if (strncmp(name, "zram", 4) == 0) return false;
+    return true;
+}
+
+static void checkSystemDisk(disk_info_t* info)
+{
+    FILE* mountsFile = setmntent("/proc/mounts", "r");
+    if (!mountsFile) return;
+    struct mntent* mountEntry;
+    char deviceBase[64];
+    strncpy(deviceBase, info->devicePath, sizeof(deviceBase) - 1);
+    while ((mountEntry = getmntent(mountsFile)) != NULL) {
+        if ((strcmp(mountEntry->mnt_dir, "/") == 0 || strcmp(mountEntry->mnt_dir, "/boot") == 0) &&
+            strstr(mountEntry->mnt_fsname, deviceBase) != NULL) {
+            info->isSystem = true;
+            info->isBoot = true;
+            break;
+        }
+    }
+    endmntent(mountsFile);
+}
+
+error_code_t diskScannerScan(disk_scan_result_t* result)
+{
+    if (!result) return ERR_INVALID_ARG;
+    memset(result, 0, sizeof(disk_scan_result_t));
+    DIR* sysBlockDir = opendir("/sys/block");
+    if (!sysBlockDir) return ERR_OPEN_DEVICE;
+    struct dirent* entry;
+    while ((entry = readdir(sysBlockDir)) != NULL && result->count < MAX_DISKS) {
+        if (entry->d_name[0] == '.') continue;
+        if (!isRealDisk(entry->d_name)) continue;
+        disk_info_t* info = &result->disks[result->count];
+        memset(info, 0, sizeof(disk_info_t));
+        snprintf(info->devicePath, sizeof(info->devicePath), "/dev/%s", entry->d_name);
+        char path[512];
+        snprintf(path, sizeof(path), "/sys/block/%s/size", entry->d_name);
+        uint64_t sectorCount = readSysfsUint64(path);
+        info->sizeBytes = sectorCount * 512;
+        if (info->sizeBytes == 0) continue;
+        snprintf(path, sizeof(path), "/sys/block/%s/queue/hw_sector_size", entry->d_name);
+        info->sectorSize = (uint32_t)readSysfsUint64(path);
+        if (info->sectorSize == 0) info->sectorSize = 512;
+        info->type = detectDiskTypeLinux(entry->d_name);
+        snprintf(path, sizeof(path), "/sys/block/%s/removable", entry->d_name);
+        char removableBuffer[8];
+        if (readSysfsString(path, removableBuffer, sizeof(removableBuffer))) {
+            info->isRemovable = (removableBuffer[0] == '1');
+        }
+        snprintf(path, sizeof(path), "/sys/block/%s/device/vendor", entry->d_name);
+        readSysfsString(path, info->vendor, sizeof(info->vendor));
+        snprintf(path, sizeof(path), "/sys/block/%s/device/model", entry->d_name);
+        readSysfsString(path, info->model, sizeof(info->model));
+        snprintf(path, sizeof(path), "/sys/block/%s/device/serial", entry->d_name);
+        readSysfsString(path, info->serial, sizeof(info->serial));
+        if (strlen(info->vendor) && strlen(info->model)) {
+            snprintf(info->friendlyName, sizeof(info->friendlyName), "%s %s", info->vendor, info->model);
+        }
+        else if (strlen(info->model)) {
+            strncpy(info->friendlyName, info->model, sizeof(info->friendlyName) - 1);
+        }
+        else {
+            strncpy(info->friendlyName, entry->d_name, sizeof(info->friendlyName) - 1);
+        }
+        if (info->type == DISK_TYPE_USB) {
+            strncpy(info->busType, "USB", sizeof(info->busType));
+        }
+        else if (info->type == DISK_TYPE_NVME) {
+            strncpy(info->busType, "NVMe", sizeof(info->busType));
+        }
+        else if (info->type == DISK_TYPE_SD_CARD) {
+            strncpy(info->busType, "SD/MMC", sizeof(info->busType));
+        }
+        else {
+            strncpy(info->busType, "SATA/ATA", sizeof(info->busType));
+        }
+        info->diskNumber = result->count;
+        checkSystemDisk(info);
+        result->count++;
+    }
+    closedir(sysBlockDir);
+    return (result->count > 0) ? ERR_OK : ERR_OPEN_DEVICE;
+}
+
+error_code_t diskScannerGetInfo(const char* devicePath, disk_info_t* info)
+{
+    if (!devicePath || !info) return ERR_INVALID_ARG;
+    disk_scan_result_t scanResult;
+    error_code_t scanError = diskScannerScan(&scanResult);
+    if (scanError != ERR_OK) return scanError;
+    for (int diskIndex = 0; diskIndex < scanResult.count; diskIndex++) {
+        if (strcmp(scanResult.disks[diskIndex].devicePath, devicePath) == 0) {
+            *info = scanResult.disks[diskIndex];
+            return ERR_OK;
+        }
+    }
+    return ERR_OPEN_DEVICE;
+}
+
+#endif
+
+void diskScannerPrintList(const disk_scan_result_t* result, bool showAll)
+{
+    if (!result || result->count == 0) {
+        printf("No disks found.\n");
+        return;
+    }
+    printf("\n--- Available disks ---\n");
+    printf("#  Device                  Size       Type     Bus       Status\n");
+    int displayedCount = 0;
+    for (int diskIndex = 0; diskIndex < result->count; diskIndex++) {
+        const disk_info_t* disk = &result->disks[diskIndex];
+        if (!showAll && disk->isSystem) continue;
+        displayedCount++;
+        char sizeString[16];
+        formatBytes(disk->sizeBytes, sizeString, sizeof(sizeString));
+        const char* statusText;
+        if (disk->isSystem || disk->isBoot) {
+            statusText = "SYSTEM";
+        }
+        else if (disk->isRemovable) {
+            statusText = "Removable";
+        }
+        else {
+            statusText = "Fixed";
+        }
+        char deviceDisplay[25];
+        if (strlen(disk->devicePath) > 24) {
+            strncpy(deviceDisplay, disk->devicePath + strlen(disk->devicePath) - 24, 24);
+            deviceDisplay[0] = '.';
+            deviceDisplay[1] = '.';
+        }
+        else {
+            strncpy(deviceDisplay, disk->devicePath, sizeof(deviceDisplay) - 1);
+        }
+        deviceDisplay[24] = '\0';
+        printf("%2d  %-24s %10s %-8s %-8s %s\n",
+            diskIndex + 1, deviceDisplay, sizeString,
+            diskTypeToString(disk->type), disk->busType, statusText);
+    }
+    printf("\nTotal: %d disk(s) found", result->count);
+    if (!showAll && displayedCount < result->count) {
+        printf(" (%d hidden system disk(s), use -A to show all)", result->count - displayedCount);
+    }
+    printf("\n\n");
+}
+
+void diskScannerPrintDetail(const disk_info_t* info)
+{
+    if (!info) return;
+    char sizeString[32];
+    formatBytes(info->sizeBytes, sizeString, sizeof(sizeString));
+    printf("\n--- Disk Information ---\n");
+    printf("Device Path:   %s\n", info->devicePath);
+    printf("Friendly Name: %s\n", info->friendlyName);
+    printf("Vendor:        %s\n", strlen(info->vendor) ? info->vendor : "(unknown)");
+    printf("Model:         %s\n", strlen(info->model) ? info->model : "(unknown)");
+    printf("Serial:        %s\n", strlen(info->serial) ? info->serial : "(not available)");
+    printf("Size:          %s\n", sizeString);
+    printf("Sector Size:   %u\n", info->sectorSize);
+    printf("Type:          %s\n", diskTypeToString(info->type));
+    printf("Bus Type:      %s\n", info->busType);
+    printf("Removable:     %s\n", info->isRemovable ? "Yes" : "No");
+    printf("System Disk:   %s\n", info->isSystem ? "YES - DO NOT WIPE!" : "No");
+    printf("Boot Disk:     %s\n", info->isBoot ? "YES - DO NOT WIPE!" : "No");
+    printf("\n");
+    if (info->isSystem || info->isBoot) {
+        printf("*** WARNING: This is a SYSTEM/BOOT disk! Wiping will make system unbootable! ***\n\n");
+    }
+}
+
+--- Contents of C:\Users\bogachenkove\Downloads\secure_wipe\disk_scanner.h ---
+
+#ifndef DISK_SCANNER_H
+#define DISK_SCANNER_H
+
+#include "common.h"
+
+#define MAX_DISKS 64
+
+typedef enum {
+    DISK_TYPE_UNKNOWN = 0,
+    DISK_TYPE_HDD,
+    DISK_TYPE_SSD,
+    DISK_TYPE_USB,
+    DISK_TYPE_NVME,
+    DISK_TYPE_SD_CARD,
+    DISK_TYPE_OPTICAL,
+    DISK_TYPE_VIRTUAL
+} disk_type_t;
+
+typedef struct {
+    char devicePath[MAX_PATH_LEN];
+    char friendlyName[128];
+    char vendor[64];
+    char model[128];
+    char serial[64];
+    char busType[32];
+    uint64_t sizeBytes;
+    uint32_t sectorSize;
+    disk_type_t type;
+    bool isRemovable;
+    bool isSystem;
+    bool isBoot;
+    int diskNumber;
+} disk_info_t;
+
+typedef struct {
+    disk_info_t disks[MAX_DISKS];
+    int count;
+} disk_scan_result_t;
+
+error_code_t diskScannerScan(disk_scan_result_t* result);
+error_code_t diskScannerGetInfo(const char* devicePath, disk_info_t* info);
+void diskScannerPrintList(const disk_scan_result_t* result, bool showAll);
+void diskScannerPrintDetail(const disk_info_t* info);
+const char* diskTypeToString(disk_type_t type);
+bool diskScannerIsSafeToWipe(const disk_info_t* info);
+const disk_info_t* diskScannerGetByIndex(const disk_scan_result_t* result, int index);
+
+#endif
+
+--- Contents of C:\Users\bogachenkove\Downloads\secure_wipe\main.c ---
+
+#include "platform.h"
+#include "common.h"
+#include "metadata.h"
+#include "wiper.h"
+#include "random_gen.h"
+#include "disk_scanner.h"
+
+int main(int argc, char* argv[])
+{
+    platformInit();
+
+    program_config_t* config = (program_config_t*)malloc(sizeof(program_config_t));
+    if (!config) {
+        fprintf(stderr, "Memory allocation failed\n");
+        platformCleanup();
+        return 1;
+    }
+    metadataDefaultConfig(config);
+
+    if (!metadataParseArguments(argc, argv, config)) {
+        metadataPrintUsage(argv[0]);
+        free(config);
+        platformCleanup();
+        return 1;
+    }
+
+    if (config->listDisks) {
+        disk_scan_result_t* scan = (disk_scan_result_t*)malloc(sizeof(disk_scan_result_t));
+        if (!scan) {
+            fprintf(stderr, "Memory allocation failed\n");
+            free(config);
+            platformCleanup();
+            return 1;
+        }
+        if (diskScannerScan(scan) == ERR_OK)
+            diskScannerPrintList(scan, config->showAllDisks);
+        else
+            fprintf(stderr, "Failed to scan disks\n");
+        free(scan);
+        free(config);
+        platformCleanup();
+        return 0;
+    }
+
+    if (config->selectDisk || strlen(config->devicePath) == 0) {
+        if (!metadataInteractiveSelectDisk(config)) {
+            free(config);
+            platformCleanup();
+            return 1;
+        }
+    }
+
+    logInit(config->logPath, config->verbose);
+    LOG_INFO("Secure Wipe started on %s", config->devicePath);
+
+    if (randomInit() != ERR_OK) {
+        LOG_ERROR("Random init failed");
+        logClose();
+        free(config);
+        platformCleanup();
+        return 1;
+    }
+    if (wiperInit() != ERR_OK) {
+        LOG_ERROR("Wiper init failed");
+        randomCleanup();
+        logClose();
+        free(config);
+        platformCleanup();
+        return 1;
+    }
+
+    int exitCode = metadataRun(config);
+
+    wiperCleanup();
+    randomCleanup();
+    LOG_INFO("Secure Wipe finished with code %d", exitCode);
+    logClose();
+    free(config);
+    platformCleanup();
+    return exitCode;
+}
+
+--- Contents of C:\Users\bogachenkove\Downloads\secure_wipe\metadata.c ---
+
+#include "metadata.h"
+#include "device_io.h"
+#include "analyzer.h"
+#include "disk_scanner.h"
+#include "random_gen.h"
+#include "platform.h"
+
+void metadataDefaultConfig(program_config_t* cfg)
+{
+    memset(cfg, 0, sizeof(program_config_t));
+    strcpy(cfg->logPath, "secure_wipe.log");
+    cfg->method = WIPE_METHOD_DOD_SHORT;
+    cfg->passes = 3;
+    cfg->verify = true;
+    cfg->verbose = true;
+}
+
+static void progressHandler(uint64_t current, uint64_t total, int pass, const char* phase)
+{
+    static int lastPercent = -1;
+    int currentPercent = (int)((current * 100) / total);
+    if (currentPercent != lastPercent) {
+        printf("\r[%-40s] %3d%% - %s", "########################################", currentPercent, phase);
+        fflush(stdout);
+        lastPercent = currentPercent;
+        if (currentPercent == 100) lastPercent = -1;
+    }
+}
+
+static bool confirmWipe(const char* devicePath, uint64_t sizeBytes, wipe_method_t method)
+{
+    char sizeString[32];
+    formatBytes(sizeBytes, sizeString, sizeof(sizeString));
+    printf("\n--- WARNING ---\n");
+    printf("Device: %s\nSize:   %s\nMethod: %s\nPasses: %d\n",
+        devicePath, sizeString, wiperMethodName(method),
+        wiperMethodPasses(method) ? wiperMethodPasses(method) : 0);
+    printf("This operation CANNOT be undone!\n");
+    printf("Type 'YES' (all caps) to confirm: ");
+    fflush(stdout);
+    char response[16] = { 0 };
+    if (!fgets(response, sizeof(response), stdin)) return false;
+    size_t responseLength = strlen(response);
+    if (responseLength && response[responseLength - 1] == '\n') response[responseLength - 1] = '\0';
+    return strcmp(response, "YES") == 0;
+}
+
+bool metadataInteractiveSelectDisk(program_config_t* cfg)
+{
+    disk_scan_result_t scanResult;
+    printf("Scanning for available disks...\n\n");
+    if (diskScannerScan(&scanResult) != ERR_OK) {
+        fprintf(stderr, "Failed to scan disks\n");
+        return false;
+    }
+    if (scanResult.count == 0) {
+        fprintf(stderr, "No disks found\n");
+        return false;
+    }
+    diskScannerPrintList(&scanResult, cfg->showAllDisks);
+    int safeCount = 0;
+    for (int diskIndex = 0; diskIndex < scanResult.count; diskIndex++) {
+        if (diskScannerIsSafeToWipe(&scanResult.disks[diskIndex])) safeCount++;
+    }
+    if (safeCount == 0) {
+        fprintf(stderr, "No safe disks available.\n");
+        return false;
+    }
+    printf("Enter disk number (1-%d) or 'q': ", scanResult.count);
+    fflush(stdout);
+    char input[16];
+    if (!fgets(input, sizeof(input), stdin)) return false;
+    if (input[0] == 'q' || input[0] == 'Q') return false;
+    int selection = atoi(input);
+    const disk_info_t* selectedDisk = diskScannerGetByIndex(&scanResult, selection);
+    if (!selectedDisk) {
+        fprintf(stderr, "Invalid selection\n");
+        return false;
+    }
+    if (!diskScannerIsSafeToWipe(selectedDisk)) {
+        fprintf(stderr, "System disk selected - not allowed.\n");
+        return false;
+    }
+    diskScannerPrintDetail(selectedDisk);
+    printf("Confirm this disk? (y/n): ");
+    fflush(stdout);
+    if (!fgets(input, sizeof(input), stdin)) return false;
+    if (input[0] != 'y' && input[0] != 'Y') return false;
+    printf("\nSelect wipe method:\n");
+    printf("  1. Zero Fill\n  2. DoD 3-pass (default)\n  3. DoD 7-pass\n  4. Schneier\n  5. Gutmann\n  6. Random\n");
+    printf("Enter choice (1-6) [2]: ");
+    fflush(stdout);
+    if (!fgets(input, sizeof(input), stdin)) input[0] = '2';
+    int choice = atoi(input);
+    if (choice == 0) choice = 2;
+    switch (choice) {
+    case 1: cfg->method = WIPE_METHOD_ZERO; cfg->passes = 1; break;
+    case 2: cfg->method = WIPE_METHOD_DOD_SHORT; cfg->passes = 3; break;
+    case 3: cfg->method = WIPE_METHOD_DOD_FULL; cfg->passes = 7; break;
+    case 4: cfg->method = WIPE_METHOD_SCHNEIER; cfg->passes = 7; break;
+    case 5: cfg->method = WIPE_METHOD_GUTMANN; cfg->passes = 35; break;
+    case 6:
+        cfg->method = WIPE_METHOD_RANDOM;
+        printf("Number of random passes (1-100) [3]: ");
+        fflush(stdout);
+        if (fgets(input, sizeof(input), stdin)) {
+            int passesValue = atoi(input);
+            cfg->passes = (passesValue > 0 && passesValue <= 100) ? (uint32_t)passesValue : 3;
+        }
+        else {
+            cfg->passes = 3;
+        }
+        break;
+    default: cfg->method = WIPE_METHOD_DOD_SHORT; cfg->passes = 3; break;
+    }
+    strncpy(cfg->devicePath, selectedDisk->devicePath, MAX_PATH_LEN - 1);
+    return true;
+}
+
+void metadataPrintUsage(const char* programName)
+{
+    printf("Usage: %s [options] <device>\n", programName);
+    printf("       %s --list [-A]\n", programName);
+    printf("       %s --select\n\n", programName);
+    printf("Options:\n");
+    printf("  -L, --list           List disks\n");
+    printf("  -S, --select         Interactive disk selection\n");
+    printf("  -A                   Show all disks (including system)\n");
+    printf("  -z, --zero           Zero fill (1 pass)\n");
+    printf("  -r N, --random N     Random data (N passes)\n");
+    printf("  -d, --dod            DoD 5220.22-M short (3 passes) [default]\n");
+    printf("  -D, --dod-full       DoD 5220.22-M ECE (7 passes)\n");
+    printf("  -s, --schneier       Schneier method (7 passes)\n");
+    printf("  -g, --gutmann        Gutmann method (35 passes)\n");
+    printf("  -a, --analyze        Read-only analysis\n");
+    printf("  --analyze-write      Analysis with write test (destroys data!)\n");
+    printf("  --wp-check           Quick write-protection check\n");
+    printf("  -v, --verify         Verify after wipe (default)\n");
+    printf("  -n, --no-verify      Skip verification\n");
+    printf("  -l FILE              Log file (default: secure_wipe.log)\n");
+    printf("  -y, --yes            Auto-confirm (dangerous)\n");
+    printf("  -q, --quiet          Quiet mode\n");
+    printf("  -h, --help           This help\n");
+    printf("  --methods            List wipe methods\n");
+}
+
+void metadataPrintMethods(void)
+{
+    printf("Wipe methods:\n");
+    printf("  Zero     : 1 pass of zeros\n");
+    printf("  Random   : N passes of random data\n");
+    printf("  DoD short: 3 passes: 0x00, 0xFF, random\n");
+    printf("  DoD full : 7 passes extended DoD\n");
+    printf("  Schneier : 7 passes (0x00, 0xFF, 5x random)\n");
+    printf("  Gutmann  : 35 passes (MFM/RLL patterns + random)\n");
+}
+
+bool metadataParseArguments(int argc, char* argv[], program_config_t* cfg)
+{
+    metadataDefaultConfig(cfg);
+    if (argc < 2) {
+        cfg->selectDisk = true;
+        return true;
+    }
+    for (int argIndex = 1; argIndex < argc; argIndex++) {
+        if (strcmp(argv[argIndex], "-h") == 0 || strcmp(argv[argIndex], "--help") == 0) {
+            metadataPrintUsage(argv[0]);
+            exit(0);
+        }
+        else if (strcmp(argv[argIndex], "--methods") == 0) {
+            metadataPrintMethods();
+            exit(0);
+        }
+        else if (strcmp(argv[argIndex], "-L") == 0 || strcmp(argv[argIndex], "--list") == 0) {
+            cfg->listDisks = true;
+        }
+        else if (strcmp(argv[argIndex], "-S") == 0 || strcmp(argv[argIndex], "--select") == 0) {
+            cfg->selectDisk = true;
+        }
+        else if (strcmp(argv[argIndex], "-A") == 0) {
+            cfg->showAllDisks = true;
+        }
+        else if (strcmp(argv[argIndex], "-z") == 0 || strcmp(argv[argIndex], "--zero") == 0) {
+            cfg->method = WIPE_METHOD_ZERO;
+            cfg->passes = 1;
+        }
+        else if (strcmp(argv[argIndex], "-r") == 0 || strcmp(argv[argIndex], "--random") == 0) {
+            cfg->method = WIPE_METHOD_RANDOM;
+            if (argIndex + 1 < argc && argv[argIndex + 1][0] != '-') {
+                cfg->passes = (uint32_t)atoi(argv[++argIndex]);
+                if (cfg->passes < 1 || cfg->passes > 100) return false;
+            }
+            else {
+                cfg->passes = 3;
+            }
+        }
+        else if (strcmp(argv[argIndex], "-d") == 0 || strcmp(argv[argIndex], "--dod") == 0) {
+            cfg->method = WIPE_METHOD_DOD_SHORT;
+            cfg->passes = 3;
+        }
+        else if (strcmp(argv[argIndex], "-D") == 0 || strcmp(argv[argIndex], "--dod-full") == 0) {
+            cfg->method = WIPE_METHOD_DOD_FULL;
+            cfg->passes = 7;
+        }
+        else if (strcmp(argv[argIndex], "-s") == 0 || strcmp(argv[argIndex], "--schneier") == 0) {
+            cfg->method = WIPE_METHOD_SCHNEIER;
+            cfg->passes = 7;
+        }
+        else if (strcmp(argv[argIndex], "-g") == 0 || strcmp(argv[argIndex], "--gutmann") == 0) {
+            cfg->method = WIPE_METHOD_GUTMANN;
+            cfg->passes = 35;
+        }
+        else if (strcmp(argv[argIndex], "-a") == 0 || strcmp(argv[argIndex], "--analyze") == 0) {
+            cfg->analyzeOnly = true;
+        }
+        else if (strcmp(argv[argIndex], "--analyze-write") == 0) {
+            cfg->analyzeOnly = true;
+            cfg->analyzeWriteTest = true;
+        }
+        else if (strcmp(argv[argIndex], "--wp-check") == 0) {
+            cfg->analyzeOnly = true;
+            cfg->quickWpCheck = true;
+        }
+        else if (strcmp(argv[argIndex], "-v") == 0 || strcmp(argv[argIndex], "--verify") == 0) {
+            cfg->verify = true;
+        }
+        else if (strcmp(argv[argIndex], "-n") == 0 || strcmp(argv[argIndex], "--no-verify") == 0) {
+            cfg->verify = false;
+        }
+        else if (strcmp(argv[argIndex], "-l") == 0) {
+            if (argIndex + 1 < argc) strncpy(cfg->logPath, argv[++argIndex], MAX_PATH_LEN - 1);
+        }
+        else if (strcmp(argv[argIndex], "-y") == 0 || strcmp(argv[argIndex], "--yes") == 0) {
+            cfg->autoConfirm = true;
+        }
+        else if (strcmp(argv[argIndex], "-q") == 0 || strcmp(argv[argIndex], "--quiet") == 0) {
+            cfg->verbose = false;
+        }
+        else if (argv[argIndex][0] != '-') {
+            strncpy(cfg->devicePath, argv[argIndex], MAX_PATH_LEN - 1);
+        }
+        else {
+            return false;
+        }
+    }
+    return true;
+}
+
+int metadataRun(program_config_t* cfg)
+{
+    device_t device;
+    analysis_result_t analysis;
+    extended_analysis_result_t extendedAnalysis;
+    bool useExtended = cfg->analyzeWriteTest || cfg->quickWpCheck;
+
+    disk_info_t diskInfo;
+    if (diskScannerGetInfo(cfg->devicePath, &diskInfo) == ERR_OK) {
+        diskScannerPrintDetail(&diskInfo);
+        if (diskInfo.isSystem || diskInfo.isBoot) {
+            fprintf(stderr, "\n*** CRITICAL: System disk - operation aborted.\n");
+            return 1;
+        }
+    }
+
+    bool needWriteAccess = useExtended;
+    if (deviceOpen(&device, cfg->devicePath, !needWriteAccess) != ERR_OK) {
+        LOG_ERROR("Failed to open device");
+        return 1;
+    }
+
+    if (cfg->quickWpCheck) {
+        printf("\n--- Quick write-protection check ---\n");
+        uint64_t firstWpSector = 0;
+        if (analyzerQuickWpCheck(&device, 16384, &firstWpSector)) {
+            printf("Write-protection detected at sector %llu (%.2f MB)\n",
+                (unsigned long long)firstWpSector,
+                (double)(firstWpSector * SECTOR_SIZE) / (1024.0 * 1024.0));
+        }
+        else {
+            printf("No write-protection detected in first 8MB.\n");
+        }
+        if (cfg->analyzeOnly && !cfg->analyzeWriteTest) {
+            deviceClose(&device);
+            return 0;
+        }
+    }
+
+    if (useExtended) {
+        if (analyzerInitExtendedResult(&extendedAnalysis) != ERR_OK) {
+            LOG_ERROR("Init extended analysis failed");
+            deviceClose(&device);
+            return 1;
+        }
+    }
+    else {
+        if (analyzerInitResult(&analysis) != ERR_OK) {
+            LOG_ERROR("Init analysis failed");
+            deviceClose(&device);
+            return 1;
+        }
+    }
+
+    printf("\n--- PHASE 1: %s ---\n", useExtended ? "EXTENDED ANALYSIS" : "DEVICE ANALYSIS");
+    if (cfg->analyzeWriteTest) {
+        printf("*** Write test mode - data will be modified! ***\n");
+        analyze_flags_t analysisFlags = ANALYZE_WRITE_TEST | ANALYZE_DETECT_WP;
+        if (analyzerScanDeviceExtended(&device, &extendedAnalysis, analysisFlags, progressHandler) != ERR_OK) {
+            LOG_ERROR("Extended analysis failed");
+            deviceClose(&device);
+            return 1;
+        }
+        analyzerPrintExtendedReport(&extendedAnalysis);
+        memcpy(&analysis, &extendedAnalysis.base, sizeof(analysis_result_t));
+    }
+    else {
+        if (analyzerScanDevice(&device, &analysis, progressHandler) != ERR_OK) {
+            LOG_ERROR("Device analysis failed");
+            deviceClose(&device);
+            return 1;
+        }
+        analyzerPrintReport(&analysis);
+    }
+
+    if (cfg->analyzeOnly) {
+        printf("Analysis complete. Exiting.\n");
+        goto cleanup;
+    }
+
+    deviceClose(&device);
+    if (!cfg->autoConfirm && !confirmWipe(cfg->devicePath, analysis.totalBytes, cfg->method)) {
+        printf("Operation cancelled.\n");
+        goto cleanup;
+    }
+
+    if (deviceOpen(&device, cfg->devicePath, false) != ERR_OK) {
+        LOG_ERROR("Failed to open device for writing");
+        return 1;
+    }
+
+    printf("\n--- PHASE 2: Destroy partition table & metadata ---\n");
+    wiperPrepareDevice(&device, progressHandler);
+
+    printf("\n--- PHASE 3: Secure wipe ---\n");
+    wipe_config_t wipeConfig = {
+        .method = cfg->method,
+        .passes = cfg->passes,
+        .skipBadSectors = true,
+        .verifyAfterWipe = cfg->verify,
+        .badSectors = &analysis,
+        .progress = progressHandler
+    };
+    wipe_stats_t wipeStats;
+    time_t startTime = time(NULL);
+    error_code_t wipeError = wiperExecute(&device, &wipeConfig, &wipeStats);
+    time_t elapsedTime = time(NULL) - startTime;
+    if (wipeError == ERR_OK) {
+        char timeString[64];
+        formatTime(elapsedTime, timeString, sizeof(timeString));
+        printf("\n--- Wipe complete ---\nTime: %s\nSectors wiped: %llu\nPasses: %llu\n",
+            timeString, (unsigned long long)wipeStats.sectorsWiped, (unsigned long long)wipeStats.totalPasses);
+    }
+    else {
+        LOG_ERROR("Wipe failed");
+    }
+
+    if (cfg->verify && wipeError == ERR_OK) {
+        printf("\n--- PHASE 4: Verification ---\n");
+        uint64_t verificationErrors = analyzerVerifyWipe(&device, progressHandler);
+        if (verificationErrors == 0) {
+            printf("Verification PASSED.\n");
+        }
+        else if (verificationErrors == UINT64_MAX) {
+            printf("Verification FAILED.\n");
+        }
+        else {
+            printf("Verification completed with %llu errors.\n", (unsigned long long)verificationErrors);
+        }
+    }
+
+cleanup:
+    deviceClose(&device);
+    if (useExtended) analyzerFreeExtendedResult(&extendedAnalysis);
+    else analyzerFreeResult(&analysis);
+    return (wipeError == ERR_OK) ? 0 : 1;
+}
+
+--- Contents of C:\Users\bogachenkove\Downloads\secure_wipe\metadata.h ---
+
+#ifndef METADATA_H
+#define METADATA_H
+
+#include "wiper.h"
+
+typedef struct {
+    char devicePath[MAX_PATH_LEN];
+    char logPath[MAX_PATH_LEN];
+    wipe_method_t method;
+    uint32_t passes;
+    bool analyzeOnly;
+    bool analyzeWriteTest;
+    bool quickWpCheck;
+    bool listDisks;
+    bool selectDisk;
+    bool showAllDisks;
+    bool verify;
+    bool autoConfirm;
+    bool verbose;
+} program_config_t;
+
+void metadataDefaultConfig(program_config_t* config);
+bool metadataParseArguments(int argc, char* argv[], program_config_t* config);
+void metadataPrintUsage(const char* programName);
+void metadataPrintMethods(void);
+bool metadataInteractiveSelectDisk(program_config_t* config);
+int metadataRun(program_config_t* config);
+
+#endif
+
+--- Contents of C:\Users\bogachenkove\Downloads\secure_wipe\platform.c ---
+
+#include "platform.h"
+#include <locale.h>
+
+void platformInit(void)
+{
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#else
+    setlocale(LC_ALL, "en_US.UTF-8");
+#endif
+}
+
+void platformCleanup(void)
+{
+}
+
+bool checkAdminPrivileges(void)
+{
+#ifdef _WIN32
+    BOOL isAdmin = FALSE;
+    PSID adminGroup = NULL;
+    SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
+    if (AllocateAndInitializeSid(&ntAuthority, 2,
+        SECURITY_BUILTIN_DOMAIN_RID,
+        DOMAIN_ALIAS_RID_ADMINS,
+        0, 0, 0, 0, 0, 0,
+        &adminGroup)) {
+        CheckTokenMembership(NULL, adminGroup, &isAdmin);
+        FreeSid(adminGroup);
+    }
+    return isAdmin == TRUE;
+#else
+    return (geteuid() == 0);
+#endif
+}
+
+void* alignedAlloc(size_t size)
+{
+#ifdef _WIN32
+    return _aligned_malloc(size, SECTOR_SIZE);
+#else
+    return aligned_alloc(SECTOR_SIZE, size);
+#endif
+}
+
+void alignedFree(void* ptr)
+{
+#ifdef _WIN32
+    _aligned_free(ptr);
+#else
+    free(ptr);
+#endif
+}
+
+--- Contents of C:\Users\bogachenkove\Downloads\secure_wipe\platform.h ---
+
+#ifndef PLATFORM_H
+#define PLATFORM_H
+
+#include "common.h"
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <winioctl.h>
+#include <bcrypt.h>
+#include <setupapi.h>
+#pragma comment(lib, "bcrypt.lib")
+#pragma comment(lib, "setupapi.lib")
+typedef HANDLE device_handle_t;
+#define INVALID_DEVICE_HANDLE INVALID_HANDLE_VALUE
+#else
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <linux/fs.h>
+typedef int device_handle_t;
+#define INVALID_DEVICE_HANDLE (-1)
+#endif
+
+void platformInit(void);
+void platformCleanup(void);
+bool checkAdminPrivileges(void);
+void* alignedAlloc(size_t size);
+void alignedFree(void* ptr);
+
+#endif
+
+--- Contents of C:\Users\bogachenkove\Downloads\secure_wipe\random_gen.c ---
+
+#include "random_gen.h"
+
+#ifdef _WIN32
+#include <windows.h>
+#include <bcrypt.h>
+static BCRYPT_ALG_HANDLE g_rngAlgorithm = NULL;
+#else
+#include <unistd.h>
+#include <fcntl.h>
+static int g_urandomFileDescriptor = -1;
+#endif
+
+error_code_t randomInit(void)
+{
+#ifdef _WIN32
+    if (BCryptOpenAlgorithmProvider(&g_rngAlgorithm, BCRYPT_RNG_ALGORITHM, NULL, 0) != 0)
+        return ERR_RANDOM_GEN;
+    return ERR_OK;
+#else
+    g_urandomFileDescriptor = open("/dev/urandom", O_RDONLY);
+    return (g_urandomFileDescriptor >= 0) ? ERR_OK : ERR_RANDOM_GEN;
+#endif
+}
+
+void randomCleanup(void)
+{
+#ifdef _WIN32
+    if (g_rngAlgorithm) BCryptCloseAlgorithmProvider(g_rngAlgorithm, 0);
+    g_rngAlgorithm = NULL;
+#else
+    if (g_urandomFileDescriptor >= 0) close(g_urandomFileDescriptor);
+    g_urandomFileDescriptor = -1;
+#endif
+}
+
+error_code_t randomFill(uint8_t* buffer, size_t size)
+{
+    if (!buffer || size == 0) return ERR_INVALID_ARG;
+#ifdef _WIN32
+    return BCryptGenRandom(g_rngAlgorithm, buffer, (ULONG)size, 0) == 0 ? ERR_OK : ERR_RANDOM_GEN;
+#else
+    size_t totalRead = 0;
+    while (totalRead < size) {
+        ssize_t bytesRead = read(g_urandomFileDescriptor, buffer + totalRead, size - totalRead);
+        if (bytesRead < 0) return ERR_RANDOM_GEN;
+        totalRead += (size_t)bytesRead;
+    }
+    return ERR_OK;
+#endif
+}
+
+error_code_t randomUint32(uint32_t* value)
+{
+    return randomFill((uint8_t*)value, sizeof(uint32_t));
+}
+
+error_code_t randomUint64(uint64_t* value)
+{
+    return randomFill((uint8_t*)value, sizeof(uint64_t));
+}
+
+--- Contents of C:\Users\bogachenkove\Downloads\secure_wipe\random_gen.h ---
+
+#ifndef RANDOM_GEN_H
+#define RANDOM_GEN_H
+
+#include "common.h"
+
+error_code_t randomInit(void);
+void randomCleanup(void);
+error_code_t randomFill(uint8_t* buffer, size_t size);
+error_code_t randomUint32(uint32_t* value);
+error_code_t randomUint64(uint64_t* value);
+
+#endif
+
+--- Contents of C:\Users\bogachenkove\Downloads\secure_wipe\wiper.c ---
+
+#include "wiper.h"
+#include "random_gen.h"
+#include "platform.h"
+
+static uint8_t* gWipeBuffer = NULL;
+
+typedef enum {
+    PATTERN_ZERO,
+    PATTERN_ONE,
+    PATTERN_RANDOM,
+    PATTERN_FIXED,
+    PATTERN_GUTMANN
+} pattern_type_t;
+
+static void fillBufferWithPattern(uint8_t* buffer, size_t size, pattern_type_t patternType,
+    const uint8_t* patternData, size_t patternLength)
+{
+    switch (patternType) {
+    case PATTERN_ZERO:
+        memset(buffer, 0x00, size);
+        break;
+    case PATTERN_ONE:
+        memset(buffer, 0xFF, size);
+        break;
+    case PATTERN_FIXED:
+        memset(buffer, patternData[0], size);
+        break;
+    case PATTERN_GUTMANN:
+        if (patternLength == 3) {
+            for (size_t offset = 0; offset < size; offset += 3) {
+                size_t remaining = size - offset;
+                if (remaining >= 3) {
+                    buffer[offset] = patternData[0];
+                    buffer[offset + 1] = patternData[1];
+                    buffer[offset + 2] = patternData[2];
+                }
+                else {
+                    for (size_t byteIndex = 0; byteIndex < remaining; byteIndex++) {
+                        buffer[offset + byteIndex] = patternData[byteIndex];
+                    }
+                }
+            }
+        }
+        else if (patternLength == 1) {
+            memset(buffer, patternData[0], size);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+static error_code_t singlePass(device_t* dev, pattern_type_t patternType,
+    const uint8_t* patternData, size_t patternLength,
+    const analysis_result_t* badSectors,
+    progress_callback_t progress,
+    int passNumber, int totalPasses,
+    const char* description)
+{
+    if (!dev || !dev->isOpen || !gWipeBuffer) return ERR_INVALID_ARG;
+
+    const device_io_ops_t* ioOps = deviceIoGetOps();
+    uint64_t currentSector = 0;
+    int lastPercent = -1;
+    uint64_t writeErrors = 0;
+    char descriptionBuffer[128];
+
+    snprintf(descriptionBuffer, sizeof(descriptionBuffer), "Pass %d/%d: %s",
+        passNumber, totalPasses, description);
+    LOG_INFO("Starting %s", descriptionBuffer);
+
+    while (currentSector < dev->sectorCount) {
+        uint32_t sectorsToWrite = BUFFER_SECTORS;
+        if (currentSector + sectorsToWrite > dev->sectorCount) {
+            sectorsToWrite = (uint32_t)(dev->sectorCount - currentSector);
+        }
+
+        size_t bufferSize = (size_t)sectorsToWrite * dev->sectorSize;
+
+        if (patternType == PATTERN_RANDOM) {
+            if (randomFill(gWipeBuffer, bufferSize) != ERR_OK) {
+                LOG_ERROR("Random fill failed at sector %llu", (unsigned long long)currentSector);
+                return ERR_RANDOM_GEN;
+            }
+        }
+        else {
+            fillBufferWithPattern(gWipeBuffer, bufferSize, patternType, patternData, patternLength);
+        }
+
+        if (ioOps->writeSectors(dev, currentSector, sectorsToWrite, gWipeBuffer) != ERR_OK) {
+            LOG_WARN("Block write failed at sector %llu, switching to sector-by-sector",
+                (unsigned long long)currentSector);
+            for (uint32_t offset = 0; offset < sectorsToWrite; offset++) {
+                uint64_t targetSector = currentSector + offset;
+                if (badSectors && analyzerIsBadSector(badSectors, targetSector)) continue;
+                if (patternType == PATTERN_RANDOM) randomFill(gWipeBuffer, dev->sectorSize);
+                if (ioOps->writeSectors(dev, targetSector, 1, gWipeBuffer) != ERR_OK) {
+                    writeErrors++;
+                    logBadSector(targetSector, "write");
+                }
+            }
+        }
+
+        currentSector += sectorsToWrite;
+
+        if (progress) {
+            int currentPercent = (int)((currentSector * 100) / dev->sectorCount);
+            if (currentPercent != lastPercent) {
+                progress(currentSector, dev->sectorCount, passNumber, descriptionBuffer);
+                lastPercent = currentPercent;
+            }
+        }
+    }
+
+    ioOps->flush(dev);
+
+    if (writeErrors > 0) {
+        LOG_WARN("%s - completed with %llu write errors",
+            descriptionBuffer, (unsigned long long)writeErrors);
+    }
+    else {
+        LOG_INFO("%s - completed successfully", descriptionBuffer);
+    }
+
+    return ERR_OK;
+}
+
+error_code_t wiperInit(void)
+{
+    if (gWipeBuffer) return ERR_OK;
+    gWipeBuffer = (uint8_t*)alignedAlloc(BUFFER_SIZE);
+    if (!gWipeBuffer) return ERR_MEMORY;
+    LOG_INFO("Wiper module initialized (buffer: %d bytes)", BUFFER_SIZE);
+    return ERR_OK;
+}
+
+void wiperCleanup(void)
+{
+    if (gWipeBuffer) {
+        memset(gWipeBuffer, 0, BUFFER_SIZE);
+        alignedFree(gWipeBuffer);
+        gWipeBuffer = NULL;
+        LOG_INFO("Wiper module cleaned up");
+    }
+}
+
+const char* wiperMethodName(wipe_method_t method)
+{
+    switch (method) {
+    case WIPE_METHOD_ZERO:       return "Zero Fill";
+    case WIPE_METHOD_RANDOM:     return "Random Fill";
+    case WIPE_METHOD_DOD_SHORT:  return "DoD 5220.22-M (3-pass)";
+    case WIPE_METHOD_DOD_FULL:   return "DoD 5220.22-M ECE (7-pass)";
+    case WIPE_METHOD_SCHNEIER:   return "Schneier Method (7-pass)";
+    case WIPE_METHOD_GUTMANN:    return "Gutmann Method (35-pass)";
+    case WIPE_METHOD_CUSTOM:     return "Custom";
+    default:                     return "Unknown";
+    }
+}
+
+int wiperMethodPasses(wipe_method_t method)
+{
+    switch (method) {
+    case WIPE_METHOD_ZERO:       return 1;
+    case WIPE_METHOD_DOD_SHORT:  return 3;
+    case WIPE_METHOD_DOD_FULL:   return 7;
+    case WIPE_METHOD_SCHNEIER:   return 7;
+    case WIPE_METHOD_GUTMANN:    return 35;
+    default:                     return 0;
+    }
+}
+
+error_code_t wiperExecute(device_t* dev, const wipe_config_t* config, wipe_stats_t* stats)
+{
+    if (!dev || !dev->isOpen || !config) return ERR_INVALID_ARG;
+
+    if (stats) {
+        memset(stats, 0, sizeof(wipe_stats_t));
+        stats->startTime = time(NULL);
+        stats->totalPasses = config->passes;
+    }
+
+    LOG_INFO("Starting secure wipe: %s on %s", wiperMethodName(config->method), dev->path);
+
+    error_code_t resultCode = ERR_OK;
+    wiper_method_func methodFunction = NULL;
+
+    switch (config->method) {
+    case WIPE_METHOD_ZERO:      methodFunction = wiperMethodZero; break;
+    case WIPE_METHOD_RANDOM:    methodFunction = wiperMethodRandom; break;
+    case WIPE_METHOD_DOD_SHORT: methodFunction = wiperMethodDoDShort; break;
+    case WIPE_METHOD_DOD_FULL:  methodFunction = wiperMethodDoDFull; break;
+    case WIPE_METHOD_SCHNEIER:  methodFunction = wiperMethodSchneier; break;
+    case WIPE_METHOD_GUTMANN:   methodFunction = wiperMethodGutmann; break;
+    case WIPE_METHOD_CUSTOM:    methodFunction = wiperMethodCustom; break;
+    default:                    return ERR_INVALID_ARG;
+    }
+
+    resultCode = methodFunction(dev, config->passes, config->progress);
+
+    if (stats) {
+        stats->endTime = time(NULL);
+        if (resultCode == ERR_OK) stats->sectorsWiped = dev->sectorCount * stats->totalPasses;
+    }
+
+    if (resultCode == ERR_OK) LOG_INFO("Wipe completed successfully");
+    else LOG_ERROR("Wipe failed: %s", errorToString(resultCode));
+
+    return resultCode;
+}
+
+error_code_t wiperMethodZero(device_t* dev, uint32_t passes, progress_callback_t progress)
+{
+    (void)passes;
+    uint8_t zeroByte = 0x00;
+    return singlePass(dev, PATTERN_ZERO, &zeroByte, 1, NULL, progress, 1, 1, "Zero fill (0x00)");
+}
+
+error_code_t wiperMethodRandom(device_t* dev, uint32_t passes, progress_callback_t progress)
+{
+    for (uint32_t passIndex = 1; passIndex <= passes; passIndex++) {
+        char description[64];
+        snprintf(description, sizeof(description), "Random fill (pass %u/%u)", passIndex, passes);
+        error_code_t errorCode = singlePass(dev, PATTERN_RANDOM, NULL, 0, NULL,
+            progress, (int)passIndex, (int)passes, description);
+        if (errorCode != ERR_OK) return errorCode;
+    }
+    return ERR_OK;
+}
+
+error_code_t wiperMethodDoDShort(device_t* dev, uint32_t passes, progress_callback_t progress)
+{
+    (void)passes;
+    uint8_t zeroByte = 0x00, oneByte = 0xFF;
+    error_code_t errorCode;
+
+    errorCode = singlePass(dev, PATTERN_ZERO, &zeroByte, 1, NULL, progress, 1, 3, "DoD: Zero fill (0x00)");
+    if (errorCode != ERR_OK) return errorCode;
+    errorCode = singlePass(dev, PATTERN_ONE, &oneByte, 1, NULL, progress, 2, 3, "DoD: One fill (0xFF)");
+    if (errorCode != ERR_OK) return errorCode;
+    return singlePass(dev, PATTERN_RANDOM, NULL, 0, NULL, progress, 3, 3, "DoD: Random data");
+}
+
+error_code_t wiperMethodDoDFull(device_t* dev, uint32_t passes, progress_callback_t progress)
+{
+    (void)passes;
+    uint8_t zeroByte = 0x00, oneByte = 0xFF;
+    error_code_t errorCode;
+    const int totalPasses = 7;
+
+    for (int passIndex = 0; passIndex < totalPasses; passIndex++) {
+        const char* description;
+        pattern_type_t patternType;
+        const uint8_t* patternData = NULL;
+        size_t patternLength = 0;
+
+        switch (passIndex) {
+        case 0: patternType = PATTERN_ZERO; patternData = &zeroByte; patternLength = 1; description = "DoD ECE: Zero fill #1"; break;
+        case 1: patternType = PATTERN_ONE;  patternData = &oneByte;  patternLength = 1; description = "DoD ECE: One fill #1"; break;
+        case 2: patternType = PATTERN_RANDOM; description = "DoD ECE: Random #1"; break;
+        case 3: patternType = PATTERN_ZERO; patternData = &zeroByte; patternLength = 1; description = "DoD ECE: Zero fill #2"; break;
+        case 4: patternType = PATTERN_ONE;  patternData = &oneByte;  patternLength = 1; description = "DoD ECE: One fill #2"; break;
+        case 5: patternType = PATTERN_RANDOM; description = "DoD ECE: Random #2"; break;
+        default: patternType = PATTERN_RANDOM; description = "DoD ECE: Random verification"; break;
+        }
+
+        errorCode = singlePass(dev, patternType, patternData, patternLength, NULL, progress,
+            passIndex + 1, totalPasses, description);
+        if (errorCode != ERR_OK) return errorCode;
+    }
+    return ERR_OK;
+}
+
+error_code_t wiperMethodSchneier(device_t* dev, uint32_t passes, progress_callback_t progress)
+{
+    (void)passes;
+    uint8_t zeroByte = 0x00, oneByte = 0xFF;
+    error_code_t errorCode;
+
+    errorCode = singlePass(dev, PATTERN_ZERO, &zeroByte, 1, NULL, progress, 1, 7, "Schneier: Zero fill");
+    if (errorCode != ERR_OK) return errorCode;
+    errorCode = singlePass(dev, PATTERN_ONE, &oneByte, 1, NULL, progress, 2, 7, "Schneier: One fill");
+    if (errorCode != ERR_OK) return errorCode;
+
+    for (int passIndex = 3; passIndex <= 7; passIndex++) {
+        char description[64];
+        snprintf(description, sizeof(description), "Schneier: Random #%d", passIndex - 2);
+        errorCode = singlePass(dev, PATTERN_RANDOM, NULL, 0, NULL, progress,
+            passIndex, 7, description);
+        if (errorCode != ERR_OK) return errorCode;
+    }
+    return ERR_OK;
+}
+
+error_code_t wiperMethodGutmann(device_t* dev, uint32_t passes, progress_callback_t progress)
+{
+    (void)passes;
+    static const uint8_t gutmannPatterns[35][3] = {
+        {0x00,0x00,0x00},{0x00,0x00,0x00},{0x00,0x00,0x00},{0x00,0x00,0x00},
+        {0x55,0x55,0x55},{0xAA,0xAA,0xAA},{0x92,0x49,0x24},{0x49,0x24,0x92},
+        {0x24,0x92,0x49},{0x00,0x00,0x00},{0x11,0x11,0x11},{0x22,0x22,0x22},
+        {0x33,0x33,0x33},{0x44,0x44,0x44},{0x55,0x55,0x55},{0x66,0x66,0x66},
+        {0x77,0x77,0x77},{0x88,0x88,0x88},{0x99,0x99,0x99},{0xAA,0xAA,0xAA},
+        {0xBB,0xBB,0xBB},{0xCC,0xCC,0xCC},{0xDD,0xDD,0xDD},{0xEE,0xEE,0xEE},
+        {0xFF,0xFF,0xFF},{0x92,0x49,0x24},{0x49,0x24,0x92},{0x24,0x92,0x49},
+        {0x6D,0xB6,0xDB},{0xB6,0xDB,0x6D},{0xDB,0x6D,0xB6},
+        {0x00,0x00,0x00},{0x00,0x00,0x00},{0x00,0x00,0x00},{0x00,0x00,0x00}
+    };
+    static const bool isRandom[35] = {
+        true,true,true,true, false,false,false,false, false,false,false,false,
+        false,false,false,false, false,false,false,false, false,false,false,false,
+        false,false,false,false, false,false,false, true,true,true,true
+    };
+    static const char* descriptions[35] = {
+        "Random 1/4","Random 2/4","Random 3/4","Random 4/4",
+        "0x55","0xAA","0x924924","0x492492","0x249249","0x00","0x11","0x22",
+        "0x33","0x44","0x55","0x66","0x77","0x88","0x99","0xAA","0xBB","0xCC",
+        "0xDD","0xEE","0xFF","0x924924","0x492492","0x249249","0x6DB6DB","0xB6DB6D","0xDB6DB6",
+        "Random final 1/4","Random final 2/4","Random final 3/4","Random final 4/4"
+    };
+    error_code_t errorCode;
+
+    for (int patternIndex = 0; patternIndex < 35; patternIndex++) {
+        pattern_type_t patternType = isRandom[patternIndex] ? PATTERN_RANDOM : PATTERN_GUTMANN;
+        errorCode = singlePass(dev, patternType, gutmannPatterns[patternIndex], 3, NULL, progress,
+            patternIndex + 1, 35, descriptions[patternIndex]);
+        if (errorCode != ERR_OK) return errorCode;
+    }
+    return ERR_OK;
+}
+
+error_code_t wiperMethodCustom(device_t* dev, uint32_t passes, progress_callback_t progress)
+{
+    error_code_t errorCode;
+    for (uint32_t passIndex = 1; passIndex <= passes; passIndex++) {
+        int patternMod = (passIndex - 1) % 4;
+        pattern_type_t patternType;
+        const uint8_t* patternData = NULL;
+        size_t patternLength = 0;
+        const char* baseDescription;
+
+        switch (patternMod) {
+        case 0:
+            patternType = PATTERN_ZERO;
+            patternData = (const uint8_t*)"\x00";
+            patternLength = 1;
+            baseDescription = "Zero fill (0x00)";
+            break;
+        case 1:
+            patternType = PATTERN_RANDOM;
+            baseDescription = "Random data";
+            break;
+        case 2:
+            patternType = PATTERN_ONE;
+            patternData = (const uint8_t*)"\xFF";
+            patternLength = 1;
+            baseDescription = "One fill (0xFF)";
+            break;
+        default:
+            patternType = PATTERN_RANDOM;
+            baseDescription = "Random data";
+            break;
+        }
+
+        char descriptionBuffer[64];
+        snprintf(descriptionBuffer, sizeof(descriptionBuffer), "%s (pass %u/%u)",
+            baseDescription, passIndex, passes);
+        errorCode = singlePass(dev, patternType, patternData, patternLength, NULL, progress,
+            (int)passIndex, (int)passes, descriptionBuffer);
+        if (errorCode != ERR_OK) return errorCode;
+    }
+    return ERR_OK;
+}
+
+#define BACKUP_GPT_SECTORS 33
+#define GPT_TOTAL_SIZE (34 * SECTOR_SIZE)
+
+static void overwriteSectorRange(device_t* dev, uint64_t startSector, uint32_t sectorCount,
+    pattern_type_t pattern, const device_io_ops_t* ioOps)
+{
+    size_t bufferSize = (size_t)sectorCount * SECTOR_SIZE;
+    uint8_t* buffer = (uint8_t*)alignedAlloc(bufferSize);
+    if (!buffer) return;
+
+    switch (pattern) {
+    case PATTERN_ZERO: memset(buffer, 0x00, bufferSize); break;
+    case PATTERN_ONE:  memset(buffer, 0xFF, bufferSize); break;
+    default:           randomFill(buffer, bufferSize); break;
+    }
+
+    if (ioOps->writeSectors(dev, startSector, sectorCount, buffer) != ERR_OK) {
+        LOG_WARN("Block write failed, trying sector-by-sector");
+        for (uint32_t offset = 0; offset < sectorCount; offset++) {
+            if (pattern == PATTERN_RANDOM) randomFill(buffer, SECTOR_SIZE);
+            ioOps->writeSectors(dev, startSector + offset, 1, buffer);
+        }
+    }
+    alignedFree(buffer);
+}
+
+error_code_t wiperDestroyPartitionTable(device_t* dev, pattern_type_t pattern)
+{
+    if (!dev || !dev->isOpen || dev->readOnly) return ERR_INVALID_ARG;
+
+    LOG_INFO("Destroying partition table (MBR+GPT)");
+    overwriteSectorRange(dev, 0, 34, pattern, deviceIoGetOps());
+
+    if (dev->sectorCount > BACKUP_GPT_SECTORS) {
+        uint64_t backupStart = dev->sectorCount - BACKUP_GPT_SECTORS;
+        LOG_INFO("Overwriting backup GPT (sectors %llu-%llu)",
+            (unsigned long long)backupStart, (unsigned long long)(dev->sectorCount - 1));
+        overwriteSectorRange(dev, backupStart, BACKUP_GPT_SECTORS, pattern, deviceIoGetOps());
+    }
+
+    deviceIoGetOps()->flush(dev);
+    LOG_INFO("Partition table destruction complete");
+    return ERR_OK;
+}
+
+error_code_t wiperDestroyFilesystemMetadata(device_t* dev, int passes, progress_callback_t progress)
+{
+    if (!dev || !dev->isOpen || dev->readOnly || passes <= 0) return ERR_INVALID_ARG;
+
+    LOG_INFO("Destroying filesystem metadata (%d passes)", passes);
+    uint64_t metadataSectors = 8192;
+    if (metadataSectors > dev->sectorCount / 2) metadataSectors = dev->sectorCount / 2;
+
+    const device_io_ops_t* ioOps = deviceIoGetOps();
+    uint8_t* buffer = (uint8_t*)alignedAlloc(BUFFER_SIZE);
+    if (!buffer) return ERR_MEMORY;
+
+    for (int passIndex = 1; passIndex <= passes; passIndex++) {
+        uint64_t currentSector = 0;
+        while (currentSector < metadataSectors) {
+            uint32_t sectorsToWrite = BUFFER_SECTORS;
+            if (currentSector + sectorsToWrite > metadataSectors) {
+                sectorsToWrite = (uint32_t)(metadataSectors - currentSector);
+            }
+            randomFill(buffer, (size_t)sectorsToWrite * SECTOR_SIZE);
+            if (ioOps->writeSectors(dev, currentSector, sectorsToWrite, buffer) != ERR_OK) {
+                for (uint32_t offset = 0; offset < sectorsToWrite; offset++) {
+                    randomFill(buffer, SECTOR_SIZE);
+                    ioOps->writeSectors(dev, currentSector + offset, 1, buffer);
+                }
+            }
+            currentSector += sectorsToWrite;
+            if (progress) {
+                progress(currentSector, metadataSectors * 2, passIndex, "Destroying metadata (start)");
+            }
+        }
+
+        if (dev->sectorCount > metadataSectors) {
+            uint64_t endStart = dev->sectorCount - metadataSectors;
+            currentSector = endStart;
+            while (currentSector < dev->sectorCount) {
+                uint32_t sectorsToWrite = BUFFER_SECTORS;
+                if (currentSector + sectorsToWrite > dev->sectorCount) {
+                    sectorsToWrite = (uint32_t)(dev->sectorCount - currentSector);
+                }
+                randomFill(buffer, (size_t)sectorsToWrite * SECTOR_SIZE);
+                if (ioOps->writeSectors(dev, currentSector, sectorsToWrite, buffer) != ERR_OK) {
+                    for (uint32_t offset = 0; offset < sectorsToWrite; offset++) {
+                        randomFill(buffer, SECTOR_SIZE);
+                        ioOps->writeSectors(dev, currentSector + offset, 1, buffer);
+                    }
+                }
+                currentSector += sectorsToWrite;
+                if (progress) {
+                    progress(metadataSectors + (currentSector - endStart), metadataSectors * 2,
+                        passIndex, "Destroying metadata (end)");
+                }
+            }
+        }
+        ioOps->flush(dev);
+    }
+
+    alignedFree(buffer);
+    LOG_INFO("Filesystem metadata destruction complete");
+    return ERR_OK;
+}
+
+bool wiperTryRemoveWriteProtection(device_t* dev)
+{
+    if (!dev || !dev->isOpen) return false;
+
+    LOG_INFO("Attempting to remove write protection...");
+
+#ifdef _WIN32
+    DWORD bytesReturned;
+    typedef struct {
+        ULONG Version;
+        BOOLEAN Persist;
+        BYTE Reserved1[3];
+        ULONGLONG Attributes;
+        ULONGLONG AttributesMask;
+        ULONG Reserved2[4];
+    } SET_DISK_ATTRIBUTES;
+#define IOCTL_DISK_SET_DISK_ATTRIBUTES 0x0007C0F4
+#define DISK_ATTRIBUTE_READ_ONLY 0x0000000000000002ULL
+
+    SET_DISK_ATTRIBUTES attributes = { 0 };
+    attributes.Version = sizeof(attributes);
+    attributes.Persist = TRUE;
+    attributes.AttributesMask = DISK_ATTRIBUTE_READ_ONLY;
+
+    if (DeviceIoControl(dev->handle, IOCTL_DISK_SET_DISK_ATTRIBUTES,
+        &attributes, sizeof(attributes), NULL, 0, &bytesReturned, NULL)) {
+        return true;
+    }
+
+    CloseHandle(dev->handle);
+    dev->handle = CreateFileA(dev->path,
+        GENERIC_READ | GENERIC_WRITE,
+        0,
+        NULL,
+        OPEN_EXISTING,
+        FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH,
+        NULL);
+    if (dev->handle != INVALID_HANDLE_VALUE) {
+        dev->isOpen = true;
+        return true;
+    }
+    dev->isOpen = false;
+#else
+    int readonlyFlag = 0;
+    if (ioctl(dev->handle, BLKROSET, &readonlyFlag) == 0) return true;
+    LOG_WARN("BLKROSET failed: %s", strerror(errno));
+#endif
+    return false;
+}
+
+error_code_t wiperPrepareDevice(device_t* dev, progress_callback_t progress)
+{
+    if (!dev || !dev->isOpen) return ERR_INVALID_ARG;
+    LOG_INFO("Preparing device for secure wipe");
+    if (dev->readOnly) return ERR_PERMISSION;
+
+    wiperTryRemoveWriteProtection(dev);
+    wiperDestroyPartitionTable(dev, PATTERN_RANDOM);
+    wiperDestroyFilesystemMetadata(dev, 3, progress);
+    LOG_INFO("Device preparation complete");
+    return ERR_OK;
+}
+
+--- Contents of C:\Users\bogachenkove\Downloads\secure_wipe\wiper.h ---
+
+#ifndef WIPER_H
+#define WIPER_H
+
+#include "common.h"
+#include "device_io.h"
+#include "analyzer.h"
+
+typedef enum {
+    WIPE_METHOD_ZERO,
+    WIPE_METHOD_RANDOM,
+    WIPE_METHOD_DOD_SHORT,
+    WIPE_METHOD_DOD_FULL,
+    WIPE_METHOD_SCHNEIER,
+    WIPE_METHOD_GUTMANN,
+    WIPE_METHOD_CUSTOM
+} wipe_method_t;
+
+typedef struct {
+    wipe_method_t method;
+    uint32_t passes;
+    bool skipBadSectors;
+    bool verifyAfterWipe;
+    analysis_result_t* badSectors;
+    progress_callback_t progress;
+} wipe_config_t;
+
+error_code_t wiperInit(void);
+void wiperCleanup(void);
+error_code_t wiperExecute(device_t* dev, const wipe_config_t* config, wipe_stats_t* stats);
+const char* wiperMethodName(wipe_method_t method);
+int wiperMethodPasses(wipe_method_t method);
+
+typedef error_code_t(*wiper_method_func)(device_t* dev, uint32_t passes, progress_callback_t progress);
+
+error_code_t wiperMethodZero(device_t* dev, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodRandom(device_t* dev, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodDoDShort(device_t* dev, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodDoDFull(device_t* dev, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodSchneier(device_t* dev, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodGutmann(device_t* dev, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodCustom(device_t* dev, uint32_t passes, progress_callback_t progress);
+
+error_code_t wiperPrepareDevice(device_t* dev, progress_callback_t progress);
+bool wiperTryRemoveWriteProtection(device_t* dev);
+
+#endif

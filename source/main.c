@@ -1,13 +1,25 @@
-#include "platform.h"
-#include "common.h"
-#include "metadata.h"
-#include "wiper.h"
-#include "random_gen.h"
-#include "disk_scanner.h"
+#include "module/platform.h"
+#include "module/common.h"
+#include "module/metadata.h"
+#include "module/wiper.h"
+#include "module/random_gen.h"
+#include "module/disk_scanner.h"
 
 int main(int argc, char* argv[])
 {
     platformInit();
+
+    if (!checkAdminPrivileges()) {
+#ifdef _WIN32
+        fprintf(stderr, "ERROR: This program requires Administrator privileges.\n");
+        fprintf(stderr, "Please run as Administrator.\n");
+#else
+        fprintf(stderr, "ERROR: This program requires root privileges.\n");
+        fprintf(stderr, "Please run with sudo.\n");
+#endif
+        platformCleanup();
+        return 1;
+    }
 
     program_config_t* config = (program_config_t*)malloc(sizeof(program_config_t));
     if (!config) {
