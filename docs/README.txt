@@ -1,4 +1,4 @@
-Secure Wipe v2.0.1.0
+Secure Wipe v2.0.2.0
 Data Destruction Tool
 
 DESCRIPTION
