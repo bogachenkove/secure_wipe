@@ -84,7 +84,7 @@ int runWipe (const program_config_t *config, analysis_result_t *analysis)
   if (analyzerQuickWpCheck (device, 16384, &firstWpSector))
   {
    printf ("Write-protection detected at sector %llu (%.2f MB)\n", (unsigned long long) firstWpSector,
-           (double) (firstWpSector * SECTOR_SIZE) / (1024.0 * 1024.0));
+		   (double) (firstWpSector * SECTOR_SIZE) / (1024.0 * 1024.0));
   }
   else
   {
@@ -174,6 +174,23 @@ int runWipe (const program_config_t *config, analysis_result_t *analysis)
   goto cleanup;
  }
 
+ uint8_t *testBuffer = (uint8_t *) alignedAlloc (SECTOR_SIZE);
+ if (!testBuffer)
+ {
+  LOG_ERROR ("Cannot allocate test buffer");
+  deviceClose (device);
+  goto cleanup;
+ }
+ memset (testBuffer, 0xAA, SECTOR_SIZE);
+ if (deviceWriteSectors (device, 0, 1, testBuffer) != ERR_OK)
+ {
+  LOG_ERROR ("Device write test failed. Device is write-protected or inaccessible.");
+  alignedFree (testBuffer);
+  deviceClose (device);
+  goto cleanup;
+ }
+ alignedFree (testBuffer);
+
  printf ("\n--- PHASE 2: Destroy filesystem metadata ---\n");
  wiperPrepareDevice (device, progressHandler);
 
@@ -195,7 +212,7 @@ int runWipe (const program_config_t *config, analysis_result_t *analysis)
   char timeString[64];
   formatTime (elapsedTime, timeString, sizeof (timeString));
   printf ("\n--- Wipe complete ---\nTime: %s\nSectors wiped: %llu\nPasses: %llu\n", timeString, (unsigned long long) wipeStats->sectorsWiped,
-          (unsigned long long) wipeStats->totalPasses);
+		  (unsigned long long) wipeStats->totalPasses);
  }
  else
  {

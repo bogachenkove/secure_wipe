@@ -101,7 +101,7 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
  uint8_t propertyBuffer[4096];
 
  if (DeviceIoControl (deviceHandle, IOCTL_STORAGE_QUERY_PROPERTY, &query, sizeof (query), propertyBuffer, sizeof (propertyBuffer), &bytesReturned,
-                      NULL))
+					  NULL))
  {
   STORAGE_DEVICE_DESCRIPTOR *descriptor = (STORAGE_DEVICE_DESCRIPTOR *) propertyBuffer;
   info->isRemovable = descriptor->RemovableMedia;
@@ -113,7 +113,7 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
    snprintf (info->vendor, sizeof (info->vendor), "%s", vendor);
    size_t vendorLength = strlen (info->vendor);
    while (vendorLength > 0 && (info->vendor[vendorLength - 1] == ' ' || info->vendor[vendorLength - 1] == '\0'))
-    info->vendor[--vendorLength] = '\0';
+	info->vendor[--vendorLength] = '\0';
   }
 
   if (descriptor->ProductIdOffset > 0)
@@ -122,7 +122,7 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
    snprintf (info->model, sizeof (info->model), "%s", product);
    size_t modelLength = strlen (info->model);
    while (modelLength > 0 && (info->model[modelLength - 1] == ' ' || info->model[modelLength - 1] == '\0'))
-    info->model[--modelLength] = '\0';
+	info->model[--modelLength] = '\0';
   }
 
   if (descriptor->SerialNumberOffset > 0 && descriptor->SerialNumberOffset < bytesReturned)
@@ -131,7 +131,7 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
    snprintf (info->serial, sizeof (info->serial), "%s", serial);
    size_t serialLength = strlen (info->serial);
    while (serialLength > 0 && (info->serial[serialLength - 1] == ' ' || info->serial[serialLength - 1] == '\0'))
-    info->serial[--serialLength] = '\0';
+	info->serial[--serialLength] = '\0';
   }
 
   switch (descriptor->BusType)
@@ -182,8 +182,8 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
   {
    if (extents.NumberOfDiskExtents > 0 && (int) extents.Extents[0].DiskNumber == diskNumber)
    {
-    info->isSystem = true;
-    info->isBoot = true;
+	info->isSystem = true;
+	info->isBoot = true;
    }
   }
   CloseHandle (volumeHandle);

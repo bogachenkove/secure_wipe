@@ -31,18 +31,18 @@ static void fillBufferWithPattern (uint8_t *buffer, size_t size, pattern_type_t 
   {
    for (size_t offset = 0; offset < size; offset += 3)
    {
-    size_t remaining = size - offset;
-    if (remaining >= 3)
-    {
-     buffer[offset] = patternData[0];
-     buffer[offset + 1] = patternData[1];
-     buffer[offset + 2] = patternData[2];
-    }
-    else
-    {
-     for (size_t byteIndex = 0; byteIndex < remaining; byteIndex++)
-      buffer[offset + byteIndex] = patternData[byteIndex];
-    }
+	size_t remaining = size - offset;
+	if (remaining >= 3)
+	{
+	 buffer[offset] = patternData[0];
+	 buffer[offset + 1] = patternData[1];
+	 buffer[offset + 2] = patternData[2];
+	}
+	else
+	{
+	 for (size_t byteIndex = 0; byteIndex < remaining; byteIndex++)
+	  buffer[offset + byteIndex] = patternData[byteIndex];
+	}
    }
   }
   else if (patternLength == 1)
@@ -56,8 +56,8 @@ static void fillBufferWithPattern (uint8_t *buffer, size_t size, pattern_type_t 
 }
 
 static error_code_t singlePass (device_t *device, pattern_type_t patternType, const uint8_t *patternData, size_t patternLength,
-                                const analysis_result_t *badSectors, progress_callback_t progress, int passNumber, int totalPasses,
-                                const char *description)
+								const analysis_result_t *badSectors, progress_callback_t progress, int passNumber, int totalPasses,
+								const char *description)
 {
  if (!device || !device->isOpen || !gWipeBuffer)
   return ERR_INVALID_ARG;
@@ -83,8 +83,8 @@ static error_code_t singlePass (device_t *device, pattern_type_t patternType, co
   {
    if (randomFill (gWipeBuffer, bufferSize) != ERR_OK)
    {
-    LOG_ERROR ("Random fill failed at sector %llu", (unsigned long long) currentSector);
-    return ERR_RANDOM_GEN;
+	LOG_ERROR ("Random fill failed at sector %llu", (unsigned long long) currentSector);
+	return ERR_RANDOM_GEN;
    }
   }
   else
@@ -96,21 +96,41 @@ static error_code_t singlePass (device_t *device, pattern_type_t patternType, co
   {
    LOG_WARN ("Block write failed at sector %llu, switching to sector-by-sector", (unsigned long long) currentSector);
 
+   uint64_t consecutiveErrors = 0;
+   const uint64_t MAX_CONSECUTIVE_ERRORS = 100;
+
    for (uint32_t offset = 0; offset < sectorsToWrite; offset++)
    {
-    uint64_t targetSector = currentSector + offset;
+	uint64_t targetSector = currentSector + offset;
 
-    if (badSectors && analyzerIsBadSector (badSectors, targetSector))
-     continue;
+	if (badSectors && analyzerIsBadSector (badSectors, targetSector))
+	 continue;
 
-    if (patternType == PATTERN_RANDOM)
-     randomFill (gWipeBuffer, device->sectorSize);
+	if (patternType == PATTERN_RANDOM)
+	 randomFill (gWipeBuffer, device->sectorSize);
+	else
+	 fillBufferWithPattern (gWipeBuffer, device->sectorSize, patternType, patternData, patternLength);
 
-    if (ioOps->writeSectors (device, targetSector, 1, gWipeBuffer) != ERR_OK)
-    {
-     writeErrors++;
-     logBadSector (targetSector, "write");
-    }
+	if (ioOps->writeSectors (device, targetSector, 1, gWipeBuffer) != ERR_OK)
+	{
+	 writeErrors++;
+	 consecutiveErrors++;
+
+	 if (consecutiveErrors <= 10)
+	  logBadSector (targetSector, "write");
+	 else if (consecutiveErrors == 11)
+	  LOG_WARN ("Too many consecutive write errors, further errors will not be logged individually");
+	}
+	else
+	{
+	 consecutiveErrors = 0;
+	}
+
+	if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS)
+	{
+	 LOG_ERROR ("Aborting: %llu consecutive write errors (device may be write-protected)", (unsigned long long) consecutiveErrors);
+	 return ERR_WRITE_DEVICE;
+	}
    }
   }
 
@@ -121,8 +141,8 @@ static error_code_t singlePass (device_t *device, pattern_type_t patternType, co
    int currentPercent = (int) ((currentSector * 100) / device->sectorCount);
    if (currentPercent != lastPercent)
    {
-    progress (currentSector, device->sectorCount, passNumber, descriptionBuffer);
-    lastPercent = currentPercent;
+	progress (currentSector, device->sectorCount, passNumber, descriptionBuffer);
+	lastPercent = currentPercent;
    }
   }
  }
@@ -425,51 +445,51 @@ error_code_t wiperMethodGutmann (device_t *device, uint32_t passes, progress_cal
  (void) passes;
 
  static const uint8_t gutmannPatterns[35][3] = {
-     {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x55, 0x55, 0x55}, {0xAA, 0xAA, 0xAA}, {0x92, 0x49, 0x24},
-     {0x49, 0x24, 0x92}, {0x24, 0x92, 0x49}, {0x00, 0x00, 0x00}, {0x11, 0x11, 0x11}, {0x22, 0x22, 0x22}, {0x33, 0x33, 0x33}, {0x44, 0x44, 0x44},
-     {0x55, 0x55, 0x55}, {0x66, 0x66, 0x66}, {0x77, 0x77, 0x77}, {0x88, 0x88, 0x88}, {0x99, 0x99, 0x99}, {0xAA, 0xAA, 0xAA}, {0xBB, 0xBB, 0xBB},
-     {0xCC, 0xCC, 0xCC}, {0xDD, 0xDD, 0xDD}, {0xEE, 0xEE, 0xEE}, {0xFF, 0xFF, 0xFF}, {0x92, 0x49, 0x24}, {0x49, 0x24, 0x92}, {0x24, 0x92, 0x49},
-     {0x6D, 0xB6, 0xDB}, {0xB6, 0xDB, 0x6D}, {0xDB, 0x6D, 0xB6}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}};
+	 {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x55, 0x55, 0x55}, {0xAA, 0xAA, 0xAA}, {0x92, 0x49, 0x24},
+	 {0x49, 0x24, 0x92}, {0x24, 0x92, 0x49}, {0x00, 0x00, 0x00}, {0x11, 0x11, 0x11}, {0x22, 0x22, 0x22}, {0x33, 0x33, 0x33}, {0x44, 0x44, 0x44},
+	 {0x55, 0x55, 0x55}, {0x66, 0x66, 0x66}, {0x77, 0x77, 0x77}, {0x88, 0x88, 0x88}, {0x99, 0x99, 0x99}, {0xAA, 0xAA, 0xAA}, {0xBB, 0xBB, 0xBB},
+	 {0xCC, 0xCC, 0xCC}, {0xDD, 0xDD, 0xDD}, {0xEE, 0xEE, 0xEE}, {0xFF, 0xFF, 0xFF}, {0x92, 0x49, 0x24}, {0x49, 0x24, 0x92}, {0x24, 0x92, 0x49},
+	 {0x6D, 0xB6, 0xDB}, {0xB6, 0xDB, 0x6D}, {0xDB, 0x6D, 0xB6}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}};
 
  static const bool isRandom[35] = {true,  true,  true,  true,  false, false, false, false, false, false, false, false,
-                                   false, false, false, false, false, false, false, false, false, false, false, false,
-                                   false, false, false, false, false, false, false, true,  true,  true,  true};
+								   false, false, false, false, false, false, false, false, false, false, false, false,
+								   false, false, false, false, false, false, false, true,  true,  true,  true};
 
  static const char *descriptions[35] = {"Random 1/4",
-                                        "Random 2/4",
-                                        "Random 3/4",
-                                        "Random 4/4",
-                                        "0x55",
-                                        "0xAA",
-                                        "0x924924",
-                                        "0x492492",
-                                        "0x249249",
-                                        "0x00",
-                                        "0x11",
-                                        "0x22",
-                                        "0x33",
-                                        "0x44",
-                                        "0x55",
-                                        "0x66",
-                                        "0x77",
-                                        "0x88",
-                                        "0x99",
-                                        "0xAA",
-                                        "0xBB",
-                                        "0xCC",
-                                        "0xDD",
-                                        "0xEE",
-                                        "0xFF",
-                                        "0x924924",
-                                        "0x492492",
-                                        "0x249249",
-                                        "0x6DB6DB",
-                                        "0xB6DB6D",
-                                        "0xDB6DB6",
-                                        "Random final 1/4",
-                                        "Random final 2/4",
-                                        "Random final 3/4",
-                                        "Random final 4/4"};
+										"Random 2/4",
+										"Random 3/4",
+										"Random 4/4",
+										"0x55",
+										"0xAA",
+										"0x924924",
+										"0x492492",
+										"0x249249",
+										"0x00",
+										"0x11",
+										"0x22",
+										"0x33",
+										"0x44",
+										"0x55",
+										"0x66",
+										"0x77",
+										"0x88",
+										"0x99",
+										"0xAA",
+										"0xBB",
+										"0xCC",
+										"0xDD",
+										"0xEE",
+										"0xFF",
+										"0x924924",
+										"0x492492",
+										"0x249249",
+										"0x6DB6DB",
+										"0xB6DB6D",
+										"0xDB6DB6",
+										"Random final 1/4",
+										"Random final 2/4",
+										"Random final 3/4",
+										"Random final 4/4"};
 
  error_code_t errorCode;
 
@@ -627,7 +647,7 @@ error_code_t wiperZeroPartitionTable (device_t *device)
  {
   uint64_t backupStart = device->sectorCount - 33;
   LOG_INFO ("Overwriting backup GPT (sectors %llu-%llu) with zeros", (unsigned long long) backupStart,
-            (unsigned long long) (device->sectorCount - 1));
+			(unsigned long long) (device->sectorCount - 1));
   overwriteSectorRange (device, backupStart, 33, 0x00);
  }
 
@@ -637,7 +657,7 @@ error_code_t wiperZeroPartitionTable (device_t *device)
 }
 
 static void overwriteMetadataRange (device_t *device, uint64_t startSector, uint64_t endSector, int passIndex, progress_callback_t progress,
-                                    const char *phasePrefix)
+									const char *phasePrefix)
 {
  const device_io_ops_t *ioOps = deviceIoGetOps ();
  uint8_t *buffer = (uint8_t *) alignedAlloc (gBufferSize);
@@ -659,8 +679,8 @@ static void overwriteMetadataRange (device_t *device, uint64_t startSector, uint
   {
    for (uint32_t offset = 0; offset < sectorsToWrite; offset++)
    {
-    randomFill (buffer, SECTOR_SIZE);
-    ioOps->writeSectors (device, currentSector + offset, 1, buffer);
+	randomFill (buffer, SECTOR_SIZE);
+	ioOps->writeSectors (device, currentSector + offset, 1, buffer);
    }
   }
 
@@ -737,28 +757,45 @@ bool wiperTryRemoveWriteProtection (device_t *device)
  attributes.AttributesMask = DISK_ATTRIBUTE_READ_ONLY;
 
  if (DeviceIoControl (device->handle, IOCTL_DISK_SET_DISK_ATTRIBUTES, &attributes, sizeof (attributes), NULL, 0, &bytesReturned, NULL))
+ {
+  LOG_INFO ("Write protection removed via IOCTL_DISK_SET_DISK_ATTRIBUTES");
   return true;
+ }
+ else
+ {
+  DWORD error = GetLastError ();
+  LOG_WARN ("IOCTL_DISK_SET_DISK_ATTRIBUTES failed with error %lu", error);
+ }
 
  CloseHandle (device->handle);
  device->handle =
-     CreateFileA (device->path, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
+	 CreateFileA (device->path, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
 
  if (device->handle != INVALID_HANDLE_VALUE)
  {
+  LOG_INFO ("Device reopened with exclusive access");
   device->isOpen = true;
   return true;
  }
-
- device->isOpen = false;
+ else
+ {
+  LOG_WARN ("Failed to reopen device (error %lu)", GetLastError ());
+  device->isOpen = false;
+  return false;
+ }
 #else
  int readonlyFlag = 0;
  if (ioctl (device->handle, BLKROSET, &readonlyFlag) == 0)
+ {
+  LOG_INFO ("Write protection removed via BLKROSET");
   return true;
-
- LOG_WARN ("BLKROSET failed: %s", strerror (errno));
+ }
+ else
+ {
+  LOG_WARN ("BLKROSET failed: %s", strerror (errno));
+  return false;
+ }
 #endif
-
- return false;
 }
 
 error_code_t wiperPrepareDevice (device_t *device, progress_callback_t progress)
@@ -771,6 +808,10 @@ error_code_t wiperPrepareDevice (device_t *device, progress_callback_t progress)
  if (device->readOnly)
   return ERR_PERMISSION;
 
- wiperTryRemoveWriteProtection (device);
+ if (!wiperTryRemoveWriteProtection (device))
+ {
+  LOG_WARN ("Could not remove write protection via system call, will attempt to write anyway");
+ }
+
  return wiperDestroyFilesystemMetadata (device, 3, progress);
 }

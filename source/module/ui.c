@@ -41,9 +41,9 @@ void progressHandler (uint64_t current, uint64_t total, int pass, const char *ph
   for (int barIndex = 0; barIndex < barWidth; barIndex++)
   {
    if (barIndex < filledWidth)
-    printf ("#");
+	printf ("#");
    else
-    printf (" ");
+	printf (" ");
   }
   printf ("] %3d%% - %s", currentPercent, phase);
   fflush (stdout);

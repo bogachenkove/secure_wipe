@@ -7,7 +7,7 @@
 #include <ctype.h>
 
 #define SECURE_WIPE_NAME "Secure Wipe"
-#define SECURE_WIPE_VERSION "2.0.1.1"
+#define SECURE_WIPE_VERSION "2.0.2.0"
 #define SECURE_WIPE_DESCRIPTION "Data Destruction Tool"
 #define SECURE_WIPE_AUTHOR "Bogachenko Vyacheslav"
 #define SECURE_WIPE_CONTACT "bogachenkove@outlook.com"
@@ -231,14 +231,14 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
    config->method = WIPE_METHOD_RANDOM;
    if (argIndex + 1 < argc && argv[argIndex + 1][0] != '-')
    {
-    int nextArg = ++argIndex;
-    config->passes = (uint32_t) atoi (argv[nextArg]);
-    if (config->passes < 1 || config->passes > 100)
-     return false;
+	int nextArg = ++argIndex;
+	config->passes = (uint32_t) atoi (argv[nextArg]);
+	if (config->passes < 1 || config->passes > 100)
+	 return false;
    }
    else
    {
-    config->passes = 3;
+	config->passes = 3;
    }
   }
   else if (strcmp (argv[argIndex], "-d") == 0 || strcmp (argv[argIndex], "--dod") == 0)
@@ -280,17 +280,17 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
   {
    if (argIndex + 1 < argc)
    {
-    size_t newSize = parseSizeWithUnit (argv[++argIndex]);
-    if (newSize == 0 || bufferSetSize (newSize) != 0)
-    {
-     fprintf (stderr, "Invalid buffer size. Use format like 1MB, 512KB.\n");
-     return false;
-    }
-    config->bufferSize = newSize;
+	size_t newSize = parseSizeWithUnit (argv[++argIndex]);
+	if (newSize == 0 || bufferSetSize (newSize) != 0)
+	{
+	 fprintf (stderr, "Invalid buffer size. Use format like 1MB, 512KB.\n");
+	 return false;
+	}
+	config->bufferSize = newSize;
    }
    else
    {
-    return false;
+	return false;
    }
   }
   else if (strcmp (argv[argIndex], "-a") == 0 || strcmp (argv[argIndex], "--analyze") == 0)
@@ -323,7 +323,7 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
   else if (strcmp (argv[argIndex], "-l") == 0)
   {
    if (argIndex + 1 < argc)
-    snprintf (config->logPath, sizeof (config->logPath), "%s", argv[++argIndex]);
+	snprintf (config->logPath, sizeof (config->logPath), "%s", argv[++argIndex]);
   }
   else if (strcmp (argv[argIndex], "-y") == 0 || strcmp (argv[argIndex], "--yes") == 0)
   {

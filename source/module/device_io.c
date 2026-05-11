@@ -16,7 +16,7 @@ static error_code_t winDeviceOpen (device_t *device, const char *path, bool read
   accessFlags |= GENERIC_WRITE;
 
  device->handle =
-     CreateFileA (path, accessFlags, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
+	 CreateFileA (path, accessFlags, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
 
  if (device->handle == INVALID_HANDLE_VALUE)
  {
@@ -112,7 +112,15 @@ static error_code_t winDeviceWriteSectors (device_t *device, uint64_t startSecto
  DWORD bytesWritten = 0;
 
  if (!WriteFile (device->handle, buffer, bytesToWrite, &bytesWritten, NULL))
+ {
+  DWORD errorCode = GetLastError ();
+  if (errorCode == ERROR_WRITE_PROTECT)
+  {
+   LOG_ERROR ("Device is write-protected (ERROR_WRITE_PROTECT)");
+   return ERR_PERMISSION;
+  }
   return ERR_WRITE_DEVICE;
+ }
 
  if (bytesWritten != bytesToWrite)
   return ERR_WRITE_DEVICE;
@@ -134,11 +142,11 @@ static error_code_t winDeviceGetSize (device_t *device)
 }
 
 static const device_io_ops_t winIoOps = {.open = winDeviceOpen,
-                                         .close = winDeviceClose,
-                                         .readSectors = winDeviceReadSectors,
-                                         .writeSectors = winDeviceWriteSectors,
-                                         .getSize = winDeviceGetSize,
-                                         .flush = winDeviceFlush};
+										 .close = winDeviceClose,
+										 .readSectors = winDeviceReadSectors,
+										 .writeSectors = winDeviceWriteSectors,
+										 .getSize = winDeviceGetSize,
+										 .flush = winDeviceFlush};
 
 const device_io_ops_t *deviceIoGetOps (void)
 {
@@ -266,11 +274,11 @@ static error_code_t posixDeviceGetSize (device_t *device)
 }
 
 static const device_io_ops_t posixIoOps = {.open = posixDeviceOpen,
-                                           .close = posixDeviceClose,
-                                           .readSectors = posixDeviceReadSectors,
-                                           .writeSectors = posixDeviceWriteSectors,
-                                           .getSize = posixDeviceGetSize,
-                                           .flush = posixDeviceFlush};
+										   .close = posixDeviceClose,
+										   .readSectors = posixDeviceReadSectors,
+										   .writeSectors = posixDeviceWriteSectors,
+										   .getSize = posixDeviceGetSize,
+										   .flush = posixDeviceFlush};
 
 const device_io_ops_t *deviceIoGetOps (void)
 {
