@@ -67,10 +67,24 @@ int main (int argc, char *argv[])
   if (strlen (gLogFilePath) == 0)
   {
    const char *tempDir = NULL;
+   char tempPathBuffer[MAX_PATH];
 #ifdef _WIN32
    tempDir = getenv ("TEMP");
    if (!tempDir)
-	tempDir = "C:\\Windows\\Temp";
+   {
+    DWORD len = GetTempPathA (sizeof (tempPathBuffer), tempPathBuffer);
+    if (len > 0 && len < sizeof (tempPathBuffer))
+    {
+     tempDir = tempPathBuffer;
+    }
+    else
+    {
+     char sysDrive[4] = "C:";
+     GetEnvironmentVariableA ("SystemDrive", sysDrive, sizeof (sysDrive));
+     snprintf (tempPathBuffer, sizeof (tempPathBuffer), "%s\\Windows\\Temp", sysDrive);
+     tempDir = tempPathBuffer;
+    }
+   }
 #else
    tempDir = "/tmp";
 #endif
