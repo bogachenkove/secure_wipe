@@ -101,7 +101,7 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
  uint8_t propertyBuffer[4096];
 
  if (DeviceIoControl (deviceHandle, IOCTL_STORAGE_QUERY_PROPERTY, &query, sizeof (query), propertyBuffer, sizeof (propertyBuffer), &bytesReturned,
-					  NULL))
+                      NULL))
  {
   STORAGE_DEVICE_DESCRIPTOR *descriptor = (STORAGE_DEVICE_DESCRIPTOR *) propertyBuffer;
   info->isRemovable = descriptor->RemovableMedia;
@@ -113,7 +113,7 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
    snprintf (info->vendor, sizeof (info->vendor), "%s", vendor);
    size_t vendorLength = strlen (info->vendor);
    while (vendorLength > 0 && (info->vendor[vendorLength - 1] == ' ' || info->vendor[vendorLength - 1] == '\0'))
-	info->vendor[--vendorLength] = '\0';
+    info->vendor[--vendorLength] = '\0';
   }
 
   if (descriptor->ProductIdOffset > 0)
@@ -122,16 +122,7 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
    snprintf (info->model, sizeof (info->model), "%s", product);
    size_t modelLength = strlen (info->model);
    while (modelLength > 0 && (info->model[modelLength - 1] == ' ' || info->model[modelLength - 1] == '\0'))
-	info->model[--modelLength] = '\0';
-  }
-
-  if (descriptor->SerialNumberOffset > 0 && descriptor->SerialNumberOffset < bytesReturned)
-  {
-   char *serial = (char *) propertyBuffer + descriptor->SerialNumberOffset;
-   snprintf (info->serial, sizeof (info->serial), "%s", serial);
-   size_t serialLength = strlen (info->serial);
-   while (serialLength > 0 && (info->serial[serialLength - 1] == ' ' || info->serial[serialLength - 1] == '\0'))
-	info->serial[--serialLength] = '\0';
+    info->model[--modelLength] = '\0';
   }
 
   switch (descriptor->BusType)
@@ -160,13 +151,6 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
   }
  }
 
- if (strlen (info->vendor) && strlen (info->model))
-  snprintf (info->friendlyName, sizeof (info->friendlyName), "%s %s", info->vendor, info->model);
- else if (strlen (info->model))
-  snprintf (info->friendlyName, sizeof (info->friendlyName), "%s", info->model);
- else
-  snprintf (info->friendlyName, sizeof (info->friendlyName), "Disk %d", diskNumber);
-
  char systemDrive[4] = "C:";
  GetEnvironmentVariableA ("SystemDrive", systemDrive, sizeof (systemDrive));
 
@@ -182,8 +166,8 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
   {
    if (extents.NumberOfDiskExtents > 0 && (int) extents.Extents[0].DiskNumber == diskNumber)
    {
-	info->isSystem = true;
-	info->isBoot = true;
+    info->isSystem = true;
+    info->isBoot = true;
    }
   }
   CloseHandle (volumeHandle);
@@ -369,16 +353,6 @@ error_code_t diskScannerScan (disk_scan_result_t *result)
   snprintf (path, sizeof (path), "/sys/block/%s/device/model", entry->d_name);
   readSysfsString (path, info->model, sizeof (info->model));
 
-  snprintf (path, sizeof (path), "/sys/block/%s/device/serial", entry->d_name);
-  readSysfsString (path, info->serial, sizeof (info->serial));
-
-  if (strlen (info->vendor) && strlen (info->model))
-   snprintf (info->friendlyName, sizeof (info->friendlyName), "%s %s", info->vendor, info->model);
-  else if (strlen (info->model))
-   snprintf (info->friendlyName, sizeof (info->friendlyName), "%s", info->model);
-  else
-   snprintf (info->friendlyName, sizeof (info->friendlyName), "%s", entry->d_name);
-
   if (info->type == DISK_TYPE_USB)
    snprintf (info->busType, sizeof (info->busType), "USB");
   else if (info->type == DISK_TYPE_NVME)
@@ -480,10 +454,8 @@ void diskScannerPrintDetail (const disk_info_t *info)
 
  printf ("\n--- Disk Information ---\n");
  printf ("Device Path:   %s\n", info->devicePath);
- printf ("Friendly Name: %s\n", info->friendlyName);
  printf ("Vendor:        %s\n", strlen (info->vendor) ? info->vendor : "(unknown)");
  printf ("Model:         %s\n", strlen (info->model) ? info->model : "(unknown)");
- printf ("Serial:        %s\n", strlen (info->serial) ? info->serial : "(not available)");
  printf ("Size:          %s\n", sizeString);
  printf ("Sector Size:   %u\n", info->sectorSize);
  printf ("Type:          %s\n", diskTypeToString (info->type));
