@@ -74,11 +74,9 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
 {
  char devicePath[64];
  snprintf (devicePath, sizeof (devicePath), "\\\\.\\PhysicalDrive%d", diskNumber);
-
  HANDLE deviceHandle = CreateFileA (devicePath, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
  if (deviceHandle == INVALID_HANDLE_VALUE)
   return ERR_OPEN_DEVICE;
-
  memset (info, 0, sizeof (disk_info_t));
  snprintf (info->devicePath, sizeof (info->devicePath), "%s", devicePath);
  info->diskNumber = diskNumber;
@@ -86,7 +84,6 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
 
  DWORD bytesReturned;
  DISK_GEOMETRY_EX geometry;
-
  if (DeviceIoControl (deviceHandle, IOCTL_DISK_GET_DRIVE_GEOMETRY_EX, NULL, 0, &geometry, sizeof (geometry), &bytesReturned, NULL))
  {
   info->sizeBytes = geometry.DiskSize.QuadPart;
@@ -99,14 +96,12 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
  query.QueryType = PropertyStandardQuery;
 
  uint8_t propertyBuffer[4096];
-
  if (DeviceIoControl (deviceHandle, IOCTL_STORAGE_QUERY_PROPERTY, &query, sizeof (query), propertyBuffer, sizeof (propertyBuffer), &bytesReturned,
                       NULL))
  {
   STORAGE_DEVICE_DESCRIPTOR *descriptor = (STORAGE_DEVICE_DESCRIPTOR *) propertyBuffer;
   info->isRemovable = descriptor->RemovableMedia;
   info->type = getDiskTypeFromBus (descriptor->BusType, info->isRemovable);
-
   if (descriptor->VendorIdOffset > 0)
   {
    char *vendor = (char *) propertyBuffer + descriptor->VendorIdOffset;
@@ -115,7 +110,6 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
    while (vendorLength > 0 && (info->vendor[vendorLength - 1] == ' ' || info->vendor[vendorLength - 1] == '\0'))
     info->vendor[--vendorLength] = '\0';
   }
-
   if (descriptor->ProductIdOffset > 0)
   {
    char *product = (char *) propertyBuffer + descriptor->ProductIdOffset;
@@ -124,7 +118,6 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
    while (modelLength > 0 && (info->model[modelLength - 1] == ' ' || info->model[modelLength - 1] == '\0'))
     info->model[--modelLength] = '\0';
   }
-
   switch (descriptor->BusType)
   {
   case BusTypeUsb:
@@ -153,12 +146,9 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
 
  char systemDrive[4] = "C:";
  GetEnvironmentVariableA ("SystemDrive", systemDrive, sizeof (systemDrive));
-
  char volumePath[64];
  snprintf (volumePath, sizeof (volumePath), "\\\\.\\%s", systemDrive);
-
  HANDLE volumeHandle = CreateFileA (volumePath, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
-
  if (volumeHandle != INVALID_HANDLE_VALUE)
  {
   VOLUME_DISK_EXTENTS extents;
@@ -172,7 +162,6 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
   }
   CloseHandle (volumeHandle);
  }
-
  CloseHandle (deviceHandle);
  return ERR_OK;
 }
@@ -181,16 +170,13 @@ error_code_t diskScannerScan (disk_scan_result_t *result)
 {
  if (!result)
   return ERR_INVALID_ARG;
-
  memset (result, 0, sizeof (disk_scan_result_t));
-
  for (int diskIndex = 0; diskIndex < MAX_DISKS; diskIndex++)
  {
   disk_info_t info;
   if (getDiskInfoWindows (diskIndex, &info) == ERR_OK && info.sizeBytes > 0)
    result->disks[result->count++] = info;
  }
-
  return (result->count > 0) ? ERR_OK : ERR_OPEN_DEVICE;
 }
 
@@ -198,11 +184,9 @@ error_code_t diskScannerGetInfo (const char *devicePath, disk_info_t *info)
 {
  if (!devicePath || !info)
   return ERR_INVALID_ARG;
-
  int diskNumber = -1;
  if (sscanf (devicePath, "\\\\.\\PhysicalDrive%d", &diskNumber) == 1)
   return getDiskInfoWindows (diskNumber, info);
-
  return ERR_INVALID_ARG;
 }
 
@@ -217,7 +201,6 @@ static bool readSysfsString (const char *path, char *outputBuffer, size_t buffer
  FILE *file = fopen (path, "r");
  if (!file)
   return false;
-
  if (fgets (outputBuffer, (int) bufferSize, file) != NULL)
  {
   size_t length = strlen (outputBuffer);
@@ -226,7 +209,6 @@ static bool readSysfsString (const char *path, char *outputBuffer, size_t buffer
   fclose (file);
   return true;
  }
-
  fclose (file);
  return false;
 }
@@ -243,27 +225,22 @@ static disk_type_t detectDiskTypeLinux (const char *deviceName)
 {
  char path[512];
  char tempBuffer[256];
-
  if (strncmp (deviceName, "nvme", 4) == 0)
   return DISK_TYPE_NVME;
  if (strncmp (deviceName, "mmcblk", 6) == 0)
   return DISK_TYPE_SD_CARD;
  if (strncmp (deviceName, "sr", 2) == 0)
   return DISK_TYPE_OPTICAL;
-
  snprintf (path, sizeof (path), "/sys/block/%s/removable", deviceName);
  if (readSysfsString (path, tempBuffer, sizeof (tempBuffer)) && tempBuffer[0] == '1')
   return DISK_TYPE_USB;
-
  snprintf (path, sizeof (path), "/sys/block/%s/device/../../driver", deviceName);
  char resolved[PATH_MAX];
  if (realpath (path, resolved) && strstr (resolved, "usb"))
   return DISK_TYPE_USB;
-
  snprintf (path, sizeof (path), "/sys/block/%s/queue/rotational", deviceName);
  if (readSysfsString (path, tempBuffer, sizeof (tempBuffer)))
   return (tempBuffer[0] == '0') ? DISK_TYPE_SSD : DISK_TYPE_HDD;
-
  return DISK_TYPE_UNKNOWN;
 }
 
@@ -285,11 +262,9 @@ static void checkSystemDisk (disk_info_t *info)
  FILE *mountsFile = setmntent ("/proc/mounts", "r");
  if (!mountsFile)
   return;
-
  struct mntent *mountEntry;
  char deviceBase[64];
  snprintf (deviceBase, sizeof (deviceBase), "%s", info->devicePath);
-
  while ((mountEntry = getmntent (mountsFile)) != NULL)
  {
   if ((strcmp (mountEntry->mnt_dir, "/") == 0 || strcmp (mountEntry->mnt_dir, "/boot") == 0) && strstr (mountEntry->mnt_fsname, deviceBase) != NULL)
@@ -299,7 +274,6 @@ static void checkSystemDisk (disk_info_t *info)
    break;
   }
  }
-
  endmntent (mountsFile);
 }
 
@@ -307,52 +281,39 @@ error_code_t diskScannerScan (disk_scan_result_t *result)
 {
  if (!result)
   return ERR_INVALID_ARG;
-
  memset (result, 0, sizeof (disk_scan_result_t));
-
  DIR *sysBlockDir = opendir ("/sys/block");
  if (!sysBlockDir)
   return ERR_OPEN_DEVICE;
-
  struct dirent *entry;
-
  while ((entry = readdir (sysBlockDir)) != NULL && result->count < MAX_DISKS)
  {
   if (entry->d_name[0] == '.')
    continue;
   if (!isRealDisk (entry->d_name))
    continue;
-
   disk_info_t *info = &result->disks[result->count];
   memset (info, 0, sizeof (disk_info_t));
   snprintf (info->devicePath, sizeof (info->devicePath), "/dev/%s", entry->d_name);
-
   char path[512];
   snprintf (path, sizeof (path), "/sys/block/%s/size", entry->d_name);
   uint64_t sectorCount = readSysfsUint64 (path);
   info->sizeBytes = sectorCount * 512;
-
   if (info->sizeBytes == 0)
    continue;
-
   snprintf (path, sizeof (path), "/sys/block/%s/queue/hw_sector_size", entry->d_name);
   info->sectorSize = (uint32_t) readSysfsUint64 (path);
   if (info->sectorSize == 0)
    info->sectorSize = 512;
-
   info->type = detectDiskTypeLinux (entry->d_name);
-
   snprintf (path, sizeof (path), "/sys/block/%s/removable", entry->d_name);
   char removableBuffer[8];
   if (readSysfsString (path, removableBuffer, sizeof (removableBuffer)))
    info->isRemovable = (removableBuffer[0] == '1');
-
   snprintf (path, sizeof (path), "/sys/block/%s/device/vendor", entry->d_name);
   readSysfsString (path, info->vendor, sizeof (info->vendor));
-
   snprintf (path, sizeof (path), "/sys/block/%s/device/model", entry->d_name);
   readSysfsString (path, info->model, sizeof (info->model));
-
   if (info->type == DISK_TYPE_USB)
    snprintf (info->busType, sizeof (info->busType), "USB");
   else if (info->type == DISK_TYPE_NVME)
@@ -361,12 +322,10 @@ error_code_t diskScannerScan (disk_scan_result_t *result)
    snprintf (info->busType, sizeof (info->busType), "SD/MMC");
   else
    snprintf (info->busType, sizeof (info->busType), "SATA/ATA");
-
   info->diskNumber = result->count;
   checkSystemDisk (info);
   result->count++;
  }
-
  closedir (sysBlockDir);
  return (result->count > 0) ? ERR_OK : ERR_OPEN_DEVICE;
 }
@@ -375,13 +334,10 @@ error_code_t diskScannerGetInfo (const char *devicePath, disk_info_t *info)
 {
  if (!devicePath || !info)
   return ERR_INVALID_ARG;
-
  disk_scan_result_t scanResult;
  error_code_t scanError = diskScannerScan (&scanResult);
-
  if (scanError != ERR_OK)
   return scanError;
-
  for (int diskIndex = 0; diskIndex < scanResult.count; diskIndex++)
  {
   if (strcmp (scanResult.disks[diskIndex].devicePath, devicePath) == 0)
@@ -390,7 +346,6 @@ error_code_t diskScannerGetInfo (const char *devicePath, disk_info_t *info)
    return ERR_OK;
   }
  }
-
  return ERR_OPEN_DEVICE;
 }
 
@@ -403,24 +358,17 @@ void diskScannerPrintList (const disk_scan_result_t *result, bool showAll)
   printf ("No disks found.\n");
   return;
  }
-
  printf ("\n--- Available disks ---\n");
  printf ("#  Device                  Size       Type     Bus       Status\n");
-
  int displayedCount = 0;
-
  for (int diskIndex = 0; diskIndex < result->count; diskIndex++)
  {
   const disk_info_t *disk = &result->disks[diskIndex];
-
   if (!showAll && disk->isSystem)
    continue;
-
   displayedCount++;
-
   char sizeString[16];
   formatBytes (disk->sizeBytes, sizeString, sizeof (sizeString));
-
   const char *statusText;
   if (disk->isSystem || disk->isBoot)
    statusText = "SYSTEM";
@@ -428,16 +376,13 @@ void diskScannerPrintList (const disk_scan_result_t *result, bool showAll)
    statusText = "Removable";
   else
    statusText = "Fixed";
-
   char deviceDisplay[25];
   if (strlen (disk->devicePath) > 24)
    snprintf (deviceDisplay, sizeof (deviceDisplay), "..%s", disk->devicePath + strlen (disk->devicePath) - 22);
   else
    snprintf (deviceDisplay, sizeof (deviceDisplay), "%s", disk->devicePath);
-
   printf ("%2d  %-24s %10s %-8s %-8s %s\n", diskIndex + 1, deviceDisplay, sizeString, diskTypeToString (disk->type), disk->busType, statusText);
  }
-
  printf ("\nTotal: %d disk(s) found", result->count);
  if (!showAll && displayedCount < result->count)
   printf (" (%d hidden system disk(s), use -A to show all)", result->count - displayedCount);
@@ -448,10 +393,8 @@ void diskScannerPrintDetail (const disk_info_t *info)
 {
  if (!info)
   return;
-
  char sizeString[32];
  formatBytes (info->sizeBytes, sizeString, sizeof (sizeString));
-
  printf ("\n--- Disk Information ---\n");
  printf ("Device Path:   %s\n", info->devicePath);
  printf ("Vendor:        %s\n", strlen (info->vendor) ? info->vendor : "(unknown)");
@@ -464,7 +407,6 @@ void diskScannerPrintDetail (const disk_info_t *info)
  printf ("System Disk:   %s\n", info->isSystem ? "YES - DO NOT WIPE!" : "No");
  printf ("Boot Disk:     %s\n", info->isBoot ? "YES - DO NOT WIPE!" : "No");
  printf ("\n");
-
  if (info->isSystem || info->isBoot)
   printf ("*** WARNING: This is a SYSTEM/BOOT disk! Wiping will make system unbootable! ***\n\n");
 }

@@ -34,7 +34,6 @@ int runWipe (const program_config_t *config, analysis_result_t *analysis)
  if (diskScannerGetInfo (config->devicePath, diskInfo) == ERR_OK)
  {
   diskScannerPrintDetail (diskInfo);
-
   if (!config->destroyPartitionTable && (diskInfo->isSystem || diskInfo->isBoot))
   {
    fprintf (stderr, "\n*** CRITICAL: System disk - operation aborted.\n");
@@ -65,13 +64,12 @@ int runWipe (const program_config_t *config, analysis_result_t *analysis)
  if (config->destroyPartitionTable)
  {
   printf ("\n--- Destroying partition table (MBR/GPT) with zeros ---\n");
-
   disk_info_t localDiskInfo;
   if (diskInfo->isSystem == false && diskInfo->isBoot == false && diskInfo->devicePath[0] == '\0')
   {
    if (diskScannerGetInfo (config->devicePath, &localDiskInfo) == ERR_OK)
    {
-	memcpy (diskInfo, &localDiskInfo, sizeof (disk_info_t));
+    memcpy (diskInfo, &localDiskInfo, sizeof (disk_info_t));
    }
   }
   if (diskInfo->isSystem || diskInfo->isBoot)
@@ -98,24 +96,22 @@ int runWipe (const program_config_t *config, analysis_result_t *analysis)
    printf ("Partition table destroyed successfully.\n");
   else
    printf ("Failed to destroy partition table (error: %s).\n", errorToString (errorCode));
-
   goto cleanup;
  }
+
  if (config->quickWpCheck)
  {
   printf ("\n--- Quick write-protection check ---\n");
   uint64_t firstWpSector = 0;
-
   if (analyzerQuickWpCheck (device, 16384, &firstWpSector))
   {
    printf ("Write-protection detected at sector %llu (%.2f MB)\n", (unsigned long long) firstWpSector,
-		   (double) (firstWpSector * SECTOR_SIZE) / (1024.0 * 1024.0));
+           (double) (firstWpSector * SECTOR_SIZE) / (1024.0 * 1024.0));
   }
   else
   {
    printf ("No write-protection detected in first 8MB.\n");
   }
-
   if (config->analyzeOnly && !config->analyzeWriteTest)
   {
    deviceClose (device);
@@ -150,14 +146,12 @@ int runWipe (const program_config_t *config, analysis_result_t *analysis)
  {
   printf ("*** Write test mode - data will be modified! ***\n");
   analyze_flags_t analysisFlags = ANALYZE_WRITE_TEST | ANALYZE_DETECT_WP;
-
   if (analyzerScanDeviceExtended (device, extendedAnalysis, analysisFlags, progressHandler) != ERR_OK)
   {
    LOG_ERROR ("Extended analysis failed");
    deviceClose (device);
    goto cleanup;
   }
-
   analyzerPrintExtendedReport (extendedAnalysis);
   memcpy (analysis, &extendedAnalysis->base, sizeof (analysis_result_t));
  }
@@ -237,7 +231,7 @@ int runWipe (const program_config_t *config, analysis_result_t *analysis)
   char timeString[64];
   formatTime (elapsedTime, timeString, sizeof (timeString));
   printf ("\n--- Wipe complete ---\nTime: %s\nSectors wiped: %llu\nPasses: %llu\n", timeString, (unsigned long long) wipeStats->sectorsWiped,
-		  (unsigned long long) wipeStats->totalPasses);
+          (unsigned long long) wipeStats->totalPasses);
  }
  else
  {
@@ -248,7 +242,6 @@ int runWipe (const program_config_t *config, analysis_result_t *analysis)
  {
   printf ("\n--- PHASE 4: Verification ---\n");
   uint64_t verificationErrors = analyzerVerifyWipe (device, progressHandler);
-
   if (verificationErrors == 0)
    printf ("Verification PASSED.\n");
   else if (verificationErrors == UINT64_MAX)

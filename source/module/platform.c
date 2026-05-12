@@ -56,35 +56,32 @@ static bool isPhysicalDriveMounted (int diskNumber)
  HANDLE volumeHandle = FindFirstVolumeW (NULL, 0);
  if (volumeHandle == INVALID_HANDLE_VALUE)
   return false;
-
  wchar_t volumeName[MAX_PATH];
  DWORD bytesReturned;
  bool found = false;
-
  while (FindNextVolumeW (volumeHandle, volumeName, MAX_PATH))
  {
   wchar_t volumePath[MAX_PATH];
   if (GetVolumePathNamesForVolumeNameW (volumeName, volumePath, MAX_PATH, &bytesReturned))
   {
    HANDLE currentVolume = CreateFileW (volumeName, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
-
    if (currentVolume != INVALID_HANDLE_VALUE)
    {
-	VOLUME_DISK_EXTENTS extents;
-	if (DeviceIoControl (currentVolume, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, &extents, sizeof (extents), &bytesReturned, NULL))
-	{
-	 for (DWORD extentIndex = 0; extentIndex < extents.NumberOfDiskExtents; extentIndex++)
-	 {
-	  if ((int) extents.Extents[extentIndex].DiskNumber == diskNumber)
-	  {
-	   found = true;
-	   break;
-	  }
-	 }
-	}
-	CloseHandle (currentVolume);
-	if (found)
-	 break;
+    VOLUME_DISK_EXTENTS extents;
+    if (DeviceIoControl (currentVolume, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, &extents, sizeof (extents), &bytesReturned, NULL))
+    {
+     for (DWORD extentIndex = 0; extentIndex < extents.NumberOfDiskExtents; extentIndex++)
+     {
+      if ((int) extents.Extents[extentIndex].DiskNumber == diskNumber)
+      {
+       found = true;
+       break;
+      }
+     }
+    }
+    CloseHandle (currentVolume);
+    if (found)
+     break;
    }
   }
  }
@@ -104,10 +101,8 @@ bool isDeviceMounted (const char *devicePath)
  FILE *mountsFile = fopen ("/proc/mounts", "r");
  if (!mountsFile)
   return false;
-
  char line[512];
  bool found = false;
-
  while (fgets (line, sizeof (line), mountsFile))
  {
   char mountDevice[256], mountPoint[256];
@@ -115,9 +110,9 @@ bool isDeviceMounted (const char *devicePath)
   {
    if (strcmp (mountDevice, devicePath) == 0)
    {
-	LOG_WARN ("Device %s is mounted at %s", devicePath, mountPoint);
-	found = true;
-	break;
+    LOG_WARN ("Device %s is mounted at %s", devicePath, mountPoint);
+    found = true;
+    break;
    }
   }
  }

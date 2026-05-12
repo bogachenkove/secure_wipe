@@ -5,7 +5,6 @@ static error_code_t winDeviceOpen (device_t *device, const char *path, bool read
 {
  if (!device || !path)
   return ERR_INVALID_ARG;
-
  memset (device, 0, sizeof (device_t));
  snprintf (device->path, sizeof (device->path), "%s", path);
  device->readOnly = readOnly;
@@ -16,8 +15,7 @@ static error_code_t winDeviceOpen (device_t *device, const char *path, bool read
   accessFlags |= GENERIC_WRITE;
 
  device->handle =
-	 CreateFileA (path, accessFlags, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
-
+     CreateFileA (path, accessFlags, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
  if (device->handle == INVALID_HANDLE_VALUE)
  {
   DWORD errorCode = GetLastError ();
@@ -25,7 +23,6 @@ static error_code_t winDeviceOpen (device_t *device, const char *path, bool read
    return ERR_PERMISSION;
   return ERR_OPEN_DEVICE;
  }
-
  device->isOpen = true;
  LOG_INFO ("Opened device: %s (mode: %s)", path, readOnly ? "read-only" : "read-write");
 
@@ -51,7 +48,6 @@ static error_code_t winDeviceOpen (device_t *device, const char *path, bool read
    return ERR_GET_SIZE;
   }
  }
-
  char sizeString[32];
  formatBytes (device->sizeBytes, sizeString, sizeof (sizeString));
  LOG_INFO ("Device size: %s (%llu sectors)", sizeString, (unsigned long long) device->sectorCount);
@@ -62,7 +58,6 @@ static error_code_t winDeviceClose (device_t *device)
 {
  if (!device)
   return ERR_INVALID_ARG;
-
  if (device->isOpen && device->handle != INVALID_HANDLE_VALUE)
  {
   FlushFileBuffers (device->handle);
@@ -78,22 +73,16 @@ static error_code_t winDeviceReadSectors (device_t *device, uint64_t startSector
 {
  if (!device || !device->isOpen || !buffer)
   return ERR_INVALID_ARG;
-
  LARGE_INTEGER offset;
  offset.QuadPart = (LONGLONG) startSector * device->sectorSize;
-
  if (!SetFilePointerEx (device->handle, offset, NULL, FILE_BEGIN))
   return ERR_SEEK_DEVICE;
-
  DWORD bytesToRead = count * device->sectorSize;
  DWORD bytesRead = 0;
-
  if (!ReadFile (device->handle, buffer, bytesToRead, &bytesRead, NULL))
   return ERR_READ_DEVICE;
-
  if (bytesRead != bytesToRead)
   return ERR_READ_DEVICE;
-
  return ERR_OK;
 }
 
@@ -101,16 +90,12 @@ static error_code_t winDeviceWriteSectors (device_t *device, uint64_t startSecto
 {
  if (!device || !device->isOpen || !buffer || device->readOnly)
   return ERR_INVALID_ARG;
-
  LARGE_INTEGER offset;
  offset.QuadPart = (LONGLONG) startSector * device->sectorSize;
-
  if (!SetFilePointerEx (device->handle, offset, NULL, FILE_BEGIN))
   return ERR_SEEK_DEVICE;
-
  DWORD bytesToWrite = count * device->sectorSize;
  DWORD bytesWritten = 0;
-
  if (!WriteFile (device->handle, buffer, bytesToWrite, &bytesWritten, NULL))
  {
   DWORD errorCode = GetLastError ();
@@ -121,10 +106,8 @@ static error_code_t winDeviceWriteSectors (device_t *device, uint64_t startSecto
   }
   return ERR_WRITE_DEVICE;
  }
-
  if (bytesWritten != bytesToWrite)
   return ERR_WRITE_DEVICE;
-
  return ERR_OK;
 }
 
@@ -142,11 +125,11 @@ static error_code_t winDeviceGetSize (device_t *device)
 }
 
 static const device_io_ops_t winIoOps = {.open = winDeviceOpen,
-										 .close = winDeviceClose,
-										 .readSectors = winDeviceReadSectors,
-										 .writeSectors = winDeviceWriteSectors,
-										 .getSize = winDeviceGetSize,
-										 .flush = winDeviceFlush};
+                                         .close = winDeviceClose,
+                                         .readSectors = winDeviceReadSectors,
+                                         .writeSectors = winDeviceWriteSectors,
+                                         .getSize = winDeviceGetSize,
+                                         .flush = winDeviceFlush};
 
 const device_io_ops_t *deviceIoGetOps (void)
 {
@@ -159,7 +142,6 @@ static error_code_t posixDeviceOpen (device_t *device, const char *path, bool re
 {
  if (!device || !path)
   return ERR_INVALID_ARG;
-
  memset (device, 0, sizeof (device_t));
  snprintf (device->path, sizeof (device->path), "%s", path);
  device->readOnly = readOnly;
@@ -175,7 +157,6 @@ static error_code_t posixDeviceOpen (device_t *device, const char *path, bool re
    return ERR_PERMISSION;
   return ERR_OPEN_DEVICE;
  }
-
  device->isOpen = true;
  LOG_INFO ("Opened device: %s (mode: %s)", path, readOnly ? "read-only" : "read-write");
 
@@ -201,7 +182,6 @@ static error_code_t posixDeviceOpen (device_t *device, const char *path, bool re
    return ERR_GET_SIZE;
   }
  }
-
  char sizeString[32];
  formatBytes (device->sizeBytes, sizeString, sizeof (sizeString));
  LOG_INFO ("Device size: %s (%llu sectors)", sizeString, (unsigned long long) device->sectorCount);
@@ -212,7 +192,6 @@ static error_code_t posixDeviceClose (device_t *device)
 {
  if (!device)
   return ERR_INVALID_ARG;
-
  if (device->isOpen && device->handle >= 0)
  {
   fsync (device->handle);
@@ -228,17 +207,13 @@ static error_code_t posixDeviceReadSectors (device_t *device, uint64_t startSect
 {
  if (!device || !device->isOpen || !buffer)
   return ERR_INVALID_ARG;
-
  off_t offset = (off_t) startSector * device->sectorSize;
  if (lseek (device->handle, offset, SEEK_SET) != offset)
   return ERR_SEEK_DEVICE;
-
  size_t bytesToRead = (size_t) count * device->sectorSize;
  ssize_t bytesRead = read (device->handle, buffer, bytesToRead);
-
  if (bytesRead < 0 || (size_t) bytesRead != bytesToRead)
   return ERR_READ_DEVICE;
-
  return ERR_OK;
 }
 
@@ -246,17 +221,13 @@ static error_code_t posixDeviceWriteSectors (device_t *device, uint64_t startSec
 {
  if (!device || !device->isOpen || !buffer || device->readOnly)
   return ERR_INVALID_ARG;
-
  off_t offset = (off_t) startSector * device->sectorSize;
  if (lseek (device->handle, offset, SEEK_SET) != offset)
   return ERR_SEEK_DEVICE;
-
  size_t bytesToWrite = (size_t) count * device->sectorSize;
  ssize_t bytesWritten = write (device->handle, buffer, bytesToWrite);
-
  if (bytesWritten < 0 || (size_t) bytesWritten != bytesToWrite)
   return ERR_WRITE_DEVICE;
-
  return ERR_OK;
 }
 
@@ -274,11 +245,11 @@ static error_code_t posixDeviceGetSize (device_t *device)
 }
 
 static const device_io_ops_t posixIoOps = {.open = posixDeviceOpen,
-										   .close = posixDeviceClose,
-										   .readSectors = posixDeviceReadSectors,
-										   .writeSectors = posixDeviceWriteSectors,
-										   .getSize = posixDeviceGetSize,
-										   .flush = posixDeviceFlush};
+                                           .close = posixDeviceClose,
+                                           .readSectors = posixDeviceReadSectors,
+                                           .writeSectors = posixDeviceWriteSectors,
+                                           .getSize = posixDeviceGetSize,
+                                           .flush = posixDeviceFlush};
 
 const device_io_ops_t *deviceIoGetOps (void)
 {

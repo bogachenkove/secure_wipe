@@ -39,7 +39,6 @@ error_code_t randomFill (uint8_t *buffer, size_t size)
 {
  if (!buffer || size == 0)
   return ERR_INVALID_ARG;
-
 #ifdef _WIN32
  return (BCryptGenRandom (gRngAlgorithm, buffer, (ULONG) size, 0) == 0) ? ERR_OK : ERR_RANDOM_GEN;
 #else

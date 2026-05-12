@@ -129,13 +129,11 @@ void formatBytes (uint64_t bytes, char *outputBuffer, size_t bufferSize)
  const char *units[] = {"B", "KB", "MB", "GB", "TB"};
  int unitIndex = 0;
  double size = (double) bytes;
-
  while (size >= 1024.0 && unitIndex < 4)
  {
   size /= 1024.0;
   unitIndex++;
  }
-
  snprintf (outputBuffer, bufferSize, "%.2f %s", size, units[unitIndex]);
 }
 
@@ -144,7 +142,6 @@ void formatTime (time_t seconds, char *outputBuffer, size_t bufferSize)
  int hours = (int) (seconds / 3600);
  int minutes = (int) ((seconds % 3600) / 60);
  int secs = (int) (seconds % 60);
-
  if (hours > 0)
   snprintf (outputBuffer, bufferSize, "%dh %dm %ds", hours, minutes, secs);
  else if (minutes > 0)

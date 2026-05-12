@@ -7,7 +7,7 @@
 #include <ctype.h>
 
 #define SECURE_WIPE_NAME "Secure Wipe"
-#define SECURE_WIPE_VERSION "2.0.3.0"
+#define SECURE_WIPE_VERSION "2.0.3.1"
 #define SECURE_WIPE_DESCRIPTION "Data Destruction Tool"
 #define SECURE_WIPE_AUTHOR "Bogachenko Vyacheslav"
 #define SECURE_WIPE_CONTACT "bogachenkove@outlook.com"
@@ -19,15 +19,11 @@ static size_t parseSizeWithUnit (const char *argument)
 {
  char *endPointer;
  unsigned long long value = strtoull (argument, &endPointer, 10);
-
  if (endPointer == argument)
   return 0;
-
  while (*endPointer == ' ')
   endPointer++;
-
  size_t multiplier = 1;
-
  if (strcasecmp (endPointer, "B") == 0 || *endPointer == '\0')
   multiplier = 1;
  else if (strcasecmp (endPointer, "KB") == 0)
@@ -36,14 +32,11 @@ static size_t parseSizeWithUnit (const char *argument)
   multiplier = 1024 * 1024;
  else
   return 0;
-
  if (value > SIZE_MAX / multiplier)
   return 0;
-
  size_t result = (size_t) (value * multiplier);
  if (result > MAX_BUFFER_SIZE)
   return 0;
-
  return result;
 }
 
@@ -128,7 +121,6 @@ void printLicense (void)
  printf ("Copyright (c) 2026 " SECURE_WIPE_AUTHOR "\n\n");
  printf ("This software is released under the " SECURE_WIPE_LICENSE ".\n");
  printf ("You are free to use, modify, and distribute it in accordance with the license terms.\n\n");
-
  FILE *licenseFile = fopen (SECURE_WIPE_LICENSE_FILE, "r");
  if (licenseFile)
  {
@@ -171,13 +163,11 @@ void printSupport (void)
 bool parseArguments (int argc, char *argv[], program_config_t *config)
 {
  configDefault (config);
-
  if (argc < 2)
  {
   config->selectDisk = true;
   return true;
  }
-
  for (int argIndex = 1; argIndex < argc; argIndex++)
  {
   if (strcmp (argv[argIndex], "-h") == 0 || strcmp (argv[argIndex], "--help") == 0)

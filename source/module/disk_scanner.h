@@ -20,10 +20,8 @@ typedef enum
 typedef struct
 {
  char devicePath[MAX_PATH_LEN];
- char friendlyName[128];
  char vendor[64];
  char model[128];
- char serial[64];
  char busType[32];
  uint64_t sizeBytes;
  uint32_t sectorSize;
