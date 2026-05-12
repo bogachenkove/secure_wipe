@@ -7,7 +7,7 @@
 #include <ctype.h>
 
 #define SECURE_WIPE_NAME "Secure Wipe"
-#define SECURE_WIPE_VERSION "2.0.2.0"
+#define SECURE_WIPE_VERSION "2.0.3.0"
 #define SECURE_WIPE_DESCRIPTION "Data Destruction Tool"
 #define SECURE_WIPE_AUTHOR "Bogachenko Vyacheslav"
 #define SECURE_WIPE_CONTACT "bogachenkove@outlook.com"
@@ -96,15 +96,16 @@ void printUsage (const char *programName)
  printf ("  --analyze-write      Analysis with write test (destroys data!)\n");
  printf ("  --wp-check           Quick write-protection check\n");
  printf ("  --destroy-partition-table   Destroy MBR/GPT only (zero out, no data wipe)\n");
+ printf ("\nLogging Options:\n");
+ printf ("  --log FILE           Write log to specified file\n");
+ printf ("  --no-log             Disable log file creation\n");
  printf ("\nOther Options:\n");
  printf ("  -b, --buffer SIZE    I/O buffer size (e.g. 1MB, 512KB)\n");
  printf ("  -v, --verify         Verify after wipe (default)\n");
  printf ("  -n, --no-verify      Skip verification\n");
- printf ("  -l FILE              Log file (default: secure_wipe.log)\n");
  printf ("  -y, --yes            Auto-confirm (dangerous)\n");
  printf ("  -q, --quiet          Quiet mode\n");
  printf ("  --methods            List wipe methods with descriptions\n");
- printf ("\nNote: --destroy-partition-table does not require confirmation and does not overwrite data.\n");
 }
 
 void printVersion (void)
@@ -140,7 +141,7 @@ void printLicense (void)
  {
   printf ("License file not found locally.\n");
   printf ("Please read the license agreement online:\n");
-  printf ("https://raw.githubusercontent.com/bogachenkove/securewipe/stable/docs/LICENSE.txt\n");
+  printf ("https://raw.githubusercontent.com/bogachenkove/securewipe/stable/%s\n", SECURE_WIPE_LICENSE_FILE);
  }
 }
 
@@ -231,14 +232,14 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
    config->method = WIPE_METHOD_RANDOM;
    if (argIndex + 1 < argc && argv[argIndex + 1][0] != '-')
    {
-	int nextArg = ++argIndex;
-	config->passes = (uint32_t) atoi (argv[nextArg]);
-	if (config->passes < 1 || config->passes > 100)
-	 return false;
+    int nextArg = ++argIndex;
+    config->passes = (uint32_t) atoi (argv[nextArg]);
+    if (config->passes < 1 || config->passes > 100)
+     return false;
    }
    else
    {
-	config->passes = 3;
+    config->passes = 3;
    }
   }
   else if (strcmp (argv[argIndex], "-d") == 0 || strcmp (argv[argIndex], "--dod") == 0)
@@ -280,17 +281,17 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
   {
    if (argIndex + 1 < argc)
    {
-	size_t newSize = parseSizeWithUnit (argv[++argIndex]);
-	if (newSize == 0 || bufferSetSize (newSize) != 0)
-	{
-	 fprintf (stderr, "Invalid buffer size. Use format like 1MB, 512KB.\n");
-	 return false;
-	}
-	config->bufferSize = newSize;
+    size_t newSize = parseSizeWithUnit (argv[++argIndex]);
+    if (newSize == 0 || bufferSetSize (newSize) != 0)
+    {
+     fprintf (stderr, "Invalid buffer size. Use format like 1MB, 512KB.\n");
+     return false;
+    }
+    config->bufferSize = newSize;
    }
    else
    {
-	return false;
+    return false;
    }
   }
   else if (strcmp (argv[argIndex], "-a") == 0 || strcmp (argv[argIndex], "--analyze") == 0)
@@ -312,6 +313,22 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
    config->destroyPartitionTable = true;
    config->analyzeOnly = true;
   }
+  else if (strcmp (argv[argIndex], "--log") == 0)
+  {
+   if (argIndex + 1 < argc && argv[argIndex + 1][0] != '-')
+   {
+    snprintf (gLogFilePath, sizeof (gLogFilePath), "%s", argv[++argIndex]);
+   }
+   else
+   {
+    return false;
+   }
+  }
+  else if (strcmp (argv[argIndex], "--no-log") == 0)
+  {
+   gNoLog = true;
+   gLogFilePath[0] = '\0';
+  }
   else if (strcmp (argv[argIndex], "-v") == 0 || strcmp (argv[argIndex], "--verify") == 0)
   {
    config->verify = true;
@@ -319,11 +336,6 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
   else if (strcmp (argv[argIndex], "-n") == 0 || strcmp (argv[argIndex], "--no-verify") == 0)
   {
    config->verify = false;
-  }
-  else if (strcmp (argv[argIndex], "-l") == 0)
-  {
-   if (argIndex + 1 < argc)
-	snprintf (config->logPath, sizeof (config->logPath), "%s", argv[++argIndex]);
   }
   else if (strcmp (argv[argIndex], "-y") == 0 || strcmp (argv[argIndex], "--yes") == 0)
   {

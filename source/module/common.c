@@ -5,6 +5,8 @@ size_t gBufferSize = DEFAULT_BUFFER_SIZE;
 size_t gBufferSectors = DEFAULT_BUFFER_SIZE / SECTOR_SIZE;
 
 logger_t gLogger = {NULL, false, ""};
+char gLogFilePath[MAX_PATH_LEN] = {0};
+bool gNoLog = false;
 
 int bufferSetSize (size_t sizeBytes)
 {
@@ -35,12 +37,17 @@ void bufferGetSizeInfo (size_t *outSizeBytes, size_t *outSectors)
 void logInit (const char *logPath, bool verbose)
 {
  gLogger.verbose = verbose;
- if (logPath && strlen (logPath) > 0)
+ if (logPath && strlen (logPath) > 0 && !gNoLog)
  {
   snprintf (gLogger.logPath, sizeof (gLogger.logPath), "%s", logPath);
   gLogger.logFile = fopen (logPath, "w");
   if (!gLogger.logFile)
    fprintf (stderr, "Warning: Cannot open log file: %s\n", logPath);
+ }
+ else
+ {
+  gLogger.logFile = NULL;
+  gLogger.logPath[0] = '\0';
  }
 }
 

@@ -62,8 +62,33 @@ int main (int argc, char *argv[])
   }
  }
 
- logInit (config.logPath, config.verbose);
- LOG_INFO ("Secure Wipe started on %s", config.devicePath);
+ if (!gNoLog)
+ {
+  if (strlen (gLogFilePath) == 0)
+  {
+   const char *tempDir = NULL;
+#ifdef _WIN32
+   tempDir = getenv ("TEMP");
+   if (!tempDir)
+	tempDir = "C:\\Windows\\Temp";
+#else
+   tempDir = "/tmp";
+#endif
+   time_t now = time (NULL);
+   struct tm *timeInfo = localtime (&now);
+   char timestamp[32];
+   strftime (timestamp, sizeof (timestamp), "%Y%m%d_%H%M%S", timeInfo);
+   snprintf (gLogFilePath, sizeof (gLogFilePath), "%s/securewipe_%s.log", tempDir, timestamp);
+  }
+  logInit (gLogFilePath, config.verbose);
+  LOG_INFO ("Secure Wipe started on %s", config.devicePath);
+ }
+ else
+ {
+  logInit (NULL, config.verbose);
+  if (config.verbose)
+   printf ("Logging to file disabled (--no-log).\n");
+ }
 
  if (randomInit () != ERR_OK)
  {

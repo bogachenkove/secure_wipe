@@ -69,6 +69,9 @@ typedef struct
 
 extern logger_t gLogger;
 
+extern char gLogFilePath[MAX_PATH_LEN];
+extern bool gNoLog;
+
 void logInit (const char *logPath, bool verbose);
 void logClose (void);
 void logMessage (const char *level, const char *format, ...);
