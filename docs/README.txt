@@ -1,4 +1,4 @@
-Secure Wipe v2.0.3.0
+Secure Wipe v2.0.3.1
 Data Destruction Tool
 
 DESCRIPTION
@@ -9,25 +9,28 @@ DESCRIPTION
 
 REQUIREMENTS
   - Windows: Administrator privileges
-  - Linux: root privileges (sudo)
+  - Linux: root privileges
 
 BUILD
-  Using CMake (recommended, cross‑platform):
+  The project supports multiple platforms (Windows, Linux, macOS) via two 
+  comprehensive build systems. Both automatically handle compiler detection, 
+  metadata extraction, and hardware optimization (LTO, AVX2, Native arch).
+
+  Using CMake:
     mkdir build && cd build
-    cmake .. -DCMAKE_BUILD_TYPE=Release   # or Debug
-    cmake --build . --config Release
+    cmake .. -DCMAKE_BUILD_TYPE=Release # or Debug
+    cmake --build . --config Release # or Debug
 
-  Using Make (alternative):
-    make BUILD=release    # or BUILD=debug
-    # On Windows with MSVC: run from Developer Command Prompt
-    # On Windows with MinGW: use mingw32-make
+  Using Make:
+    make BUILD=release # or debug
 
-  The build system automatically:
-    - Detects MSVC on Windows, otherwise falls back to GCC/Clang
-    - Extracts version metadata from source/module/metadata.c
-    - Sets appropriate compile/link flags (LTO, AVX2, etc.)
-    - Links required system libraries (bcrypt, setupapi, advapi32 on Windows; libm on Unix)
-    - Embeds UAC manifest (Windows) requiring administrator rights
+  Build System Features:
+    - Metadata Sync: Version info is pulled directly from source/module/metadata.c.
+    - Security: Embeds UAC manifest (Windows) to ensure Administrator access.
+    - Performance: Enables Link Time Optimization (LTO) and hardware acceleration (AVX2/Native).
+    - Standards: Enforces strict C17 compliance without compiler-specific extensions.
+    - Quality: High-level diagnostics in Debug mode (Wall/W4) and silent Release builds.
+    - Dependencies: Links OS-specific libs (bcrypt, setupapi on Win; libm on Unix).
 
 USAGE
   securewipe [options] <device>
