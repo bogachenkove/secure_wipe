@@ -1,86 +1,117 @@
 BUILD ?= release
+TARGET := securewipe
+
 ifeq ($(BUILD),debug)
-BUILD_MODE := Debug
-else ifeq ($(BUILD),release)
-BUILD_MODE := Release
+    BUILD_MODE := Debug
 else
-$(error BUILD must be either 'debug' or 'release' (default: release))
+    BUILD_MODE := Release
 endif
-TARGET = securewipe
-SRC_DIR = source
-OBJ_DIR = ./MakeFiles/$(TARGET).dir
-SOURCES := $(shell LC_ALL=C find $(SRC_DIR) -name "*.c" | LC_ALL=C sort)
-OBJECTS := $(addprefix $(OBJ_DIR)/,$(patsubst $(SRC_DIR)/%,%,$(SOURCES:.c=.c.o)))
-ifeq ($(origin CC),default)
-CC := $(shell command -v gcc 2>/dev/null || command -v clang 2>/dev/null || echo "none")
-ifeq ($(CC),none)
-$(error Neither gcc nor clang found. Please install a C compiler.)
-endif
-endif
-CFLAGS = -std=c11
-LDFLAGS =
-LIBS =
-PKG_CONFIG := $(shell command -v pkg-config 2>/dev/null)
-OS := $(shell uname -s)
-PLATFORM_LIBS_FOUND := 0
+
+SRC_DIR  := source
+OBJ_DIR  := ./MakeFiles/$(TARGET).dir
+
 ifeq ($(OS),Windows_NT)
-TARGET := securewipe.exe
-PLATFORM_LIBS_NAMES := -lbcrypt -lsetupapi -lcfgmgr32 -ladvapi32 -lkernel32
-PLATFORM_LIBS_FOUND := 1
+    IS_WIN := 1
+    EXE_EXT := .exe
 else
-ifdef PKG_CONFIG
-PLATFORM_CFLAGS := $(shell $(PKG_CONFIG) --cflags glib-2.0 2>/dev/null)
-PLATFORM_LIBS   := $(shell $(PKG_CONFIG) --libs   glib-2.0 2>/dev/null)
-ifneq ($(PLATFORM_LIBS),)
-CFLAGS += $(PLATFORM_CFLAGS)
-PLATFORM_LIBS_NAMES := $(PLATFORM_LIBS)
-PLATFORM_LIBS_FOUND := 1
+    UNAME_S := $(shell uname -s)
+    ifeq ($(UNAME_S),Darwin)
+        IS_MAC := 1
+    endif
+    EXE_EXT :=
 endif
+
+FINAL_TARGET := $(TARGET)$(EXE_EXT)
+
+ifeq ($(origin CC),default)
+    ifeq ($(IS_WIN),1)
+        CC := cl
+    else
+        CC := gcc
+    endif
 endif
-ifndef PLATFORM_LIBS_NAMES
-PLATFORM_LIBS_NAMES := 
+
+ifneq ($(findstring cl,$(notdir $(CC))),)
+    MSVC := 1
 endif
-PLATFORM_LIBS_FOUND := 1
+
+VERSION_H := $(SRC_DIR)/module/metadata.c
+
+define get_macro
+$(shell grep -E "#define[[:space:]]+$(1)[[:space:]]+\".*\"" $(VERSION_H) | sed -E 's/.*"([^"]*)".*/\1/')
+endef
+
+PRODUCT_NAME     := $(call get_macro,SECURE_WIPE_NAME)
+FILE_DESCRIPTION := $(call get_macro,SECURE_WIPE_DESCRIPTION)
+PRODUCT_VERSION  := $(call get_macro,SECURE_WIPE_VERSION)
+LICENSE          := $(call get_macro,SECURE_WIPE_LICENSE)
+COPYRIGHT        := $(call get_macro,SECURE_WIPE_COPYRIGHT)
+AUTHOR           := $(call get_macro,SECURE_WIPE_AUTHOR)
+CONTACT          := $(call get_macro,SECURE_WIPE_CONTACT)
+HOMEPAGE         := $(call get_macro,SECURE_WIPE_HOMEPAGE)
+
+ifeq ($(MSVC),1)
+    CFLAGS  := /nologo /TC /utf-8
+    DEFS    := /DPRODUCT_NAME="\"$(PRODUCT_NAME)\"" /DFILE_DESCRIPTION="\"$(FILE_DESCRIPTION)\"" \
+               /DPRODUCT_VERSION="\"$(PRODUCT_VERSION)\"" /DLICENSE="\"$(LICENSE)\"" \
+               /DCOPYRIGHT="\"$(COPYRIGHT)\"" /DAUTHOR="\"$(AUTHOR)\"" \
+               /DCONTACT="\"$(CONTACT)\"" /DHOMEPAGE="\"$(HOMEPAGE)\""
+    LIBS    := bcrypt.lib setupapi.lib cfgmgr32.lib advapi32.lib kernel32.lib
+
+    ifeq ($(BUILD_MODE),Release)
+        CFLAGS  += /W0 /Ox /GL /arch:AVX2 /DNDEBUG
+        LDFLAGS := /LTCG /OPT:REF /OPT:ICF /DEBUG:NONE \
+                   /MANIFESTUAC:"level='requireAdministrator' uiAccess='false'"
+    else
+        CFLAGS  += /W4 /Od /Zi /RTC1
+        LDFLAGS := /DEBUG
+    endif
+else
+    CFLAGS  := -std=c17 -finput-charset=UTF-8 -fexec-charset=UTF-8
+    DEFS    := -DPRODUCT_NAME="\"$(PRODUCT_NAME)\"" -DFILE_DESCRIPTION="\"$(FILE_DESCRIPTION)\"" \
+               -DPRODUCT_VERSION="\"$(PRODUCT_VERSION)\"" -DLICENSE="\"$(LICENSE)\"" \
+               -DCOPYRIGHT="\"$(COPYRIGHT)\"" -DAUTHOR="\"$(AUTHOR)\"" \
+               -DCONTACT="\"$(CONTACT)\"" -DHOMEPAGE="\"$(HOMEPAGE)\""
+
+    ifeq ($(IS_WIN),1)
+        LIBS := -lbcrypt -lsetupapi -lcfgmgr32 -ladvapi32 -lkernel32
+    else
+        LIBS := -lm
+    endif
+
+    ifeq ($(BUILD_MODE),Release)
+        CFLAGS  += -w -O3 -flto -march=native -DNDEBUG
+        LDFLAGS := -s -flto -Wl,--build-id=none
+        ifeq ($(IS_MAC),1)
+            LDFLAGS += -Wl,-dead_strip
+        endif
+    else
+        CFLAGS  += -Wall -Wextra -pedantic -O0 -ggdb3
+        LDFLAGS :=
+    endif
 endif
-ifeq ($(PLATFORM_LIBS_FOUND),0)
-$(error Platform libraries not found.)
+
+SOURCES := $(shell find $(SRC_DIR) -name "*.c")
+OBJECTS := $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SOURCES))
+
+all: $(FINAL_TARGET)
+
+$(FINAL_TARGET): $(OBJECTS)
+ifeq ($(MSVC),1)
+    link.exe $(LDFLAGS) /OUT:$@ $^ $(LIBS)
+else
+    $(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LIBS)
 endif
-LIBS += $(PLATFORM_LIBS_NAMES)
-CFLAGS += -Wall -Wextra -pedantic -finput-charset=UTF-8 -fexec-charset=UTF-8
-ifeq ($(BUILD),debug)
-SRC_ABS := $(abspath $(SRC_DIR))
-CUR_ABS := $(CURDIR)
-CFLAGS += -O0 -g \
--fdebug-prefix-map=$(SRC_ABS)=. \
--fdebug-prefix-map=$(SRC_DIR)=. \
--fdebug-prefix-map=$(CUR_ABS)=. \
--fno-ident \
--gno-record-gcc-switches
-else ifeq ($(BUILD),release)
-CFLAGS += -O2 -DNDEBUG -g0
-LDFLAGS += -s -Wl,--build-id=none
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
+    @mkdir -p $(dir $@)
+ifeq ($(MSVC),1)
+    $(CC) $(CFLAGS) $(DEFS) /c $< /Fo$@
+else
+    $(CC) $(CFLAGS) $(DEFS) -c $< -o $@
 endif
-VERSION_H = $(SRC_DIR)/module/metadata.c
-escape_quotes = $(subst ",\",$(1))
-PRODUCT_NAME     := $(shell grep -E "#define[[:space:]]+SECURE_WIPE_NAME[[:space:]]+\".*\"" $(VERSION_H) | sed -E 's/#define[[:space:]]+SECURE_WIPE_NAME[[:space:]]+\"([^\"]*)\".*/\1/')
-PRODUCT_VERSION  := $(shell grep -E "#define[[:space:]]+SECURE_WIPE_VERSION[[:space:]]+\".*\"" $(VERSION_H) | sed -E 's/#define[[:space:]]+SECURE_WIPE_VERSION[[:space:]]+\"([^\"]*)\".*/\1/')
-AUTHOR           := $(shell grep -E "#define[[:space:]]+SECURE_WIPE_AUTHOR[[:space:]]+\".*\"" $(VERSION_H) | sed -E 's/#define[[:space:]]+SECURE_WIPE_AUTHOR[[:space:]]+\"([^\"]*)\".*/\1/')
-CFLAGS += \
--DPRODUCT_NAME="\"$(call escape_quotes,$(PRODUCT_NAME))\"" \
--DPRODUCT_VERSION="\"$(call escape_quotes,$(PRODUCT_VERSION))\"" \
--DAUTHOR="\"$(call escape_quotes,$(AUTHOR))\""
-vpath %.c $(SRC_DIR)
-vpath %.c $(SRC_DIR)/module
-$(shell mkdir -p $(OBJ_DIR))
-all: $(TARGET)
-$(TARGET): $(OBJECTS)
-	$(CC) -o $@ $^ $(LIBS) $(LDFLAGS)
-$(OBJ_DIR)/%.c.o: %.c
-	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+
 clean:
-	rm -rf $(OBJ_DIR) $(TARGET)
-rebuild: clean all
-run: all
-	./$(TARGET)
-.PHONY: all clean rebuild run
+    rm -rf $(OBJ_DIR) $(FINAL_TARGET) *.pdb *.manifest
+
+.PHONY: all clean
