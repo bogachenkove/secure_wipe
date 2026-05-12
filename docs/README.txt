@@ -12,10 +12,22 @@ REQUIREMENTS
   - Linux: root privileges (sudo)
 
 BUILD
-  Compile all .c files from source/module/ and source/main.c.
-  Link against platform libraries:
-    Windows: bcrypt.lib, setupapi.lib
-    Linux: no extra libs (uses POSIX + Linux ioctls)
+  Using CMake (recommended, cross‑platform):
+    mkdir build && cd build
+    cmake .. -DCMAKE_BUILD_TYPE=Release   # or Debug
+    cmake --build . --config Release
+
+  Using Make (alternative):
+    make BUILD=release    # or BUILD=debug
+    # On Windows with MSVC: run from Developer Command Prompt
+    # On Windows with MinGW: use mingw32-make
+
+  The build system automatically:
+    - Detects MSVC on Windows, otherwise falls back to GCC/Clang
+    - Extracts version metadata from source/module/metadata.c
+    - Sets appropriate compile/link flags (LTO, AVX2, etc.)
+    - Links required system libraries (bcrypt, setupapi, advapi32 on Windows; libm on Unix)
+    - Embeds UAC manifest (Windows) requiring administrator rights
 
 USAGE
   securewipe [options] <device>
