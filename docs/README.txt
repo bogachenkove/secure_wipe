@@ -1,4 +1,4 @@
-Secure Wipe v2.0.2.0
+Secure Wipe v2.0.3.0
 Data Destruction Tool
 
 DESCRIPTION
@@ -18,9 +18,9 @@ BUILD
     Linux: no extra libs (uses POSIX + Linux ioctls)
 
 USAGE
-  secure_wipe [options] <device>
-  secure_wipe --list [-A]
-  secure_wipe --select
+  securewipe [options] <device>
+  securewipe --list [-A]
+  securewipe --select
 
 OPTIONS
   Information:
@@ -34,7 +34,7 @@ OPTIONS
   Wipe methods:
     -z/--zero               Zero fill (1 pass)
     -r N/--random N         Random data (N passes, 1‑100)
-    -d/--dod                DoD 5220.22-M short (3 passes) [default]
+    -d/--dod                DoD 5220.22-M short (3 passes)
     -D/--dod-full           DoD 5220.22-M ECE (7 passes)
     -s/--schneier           Schneier (7 passes: 0xFF, 0x00, 5×random)
     -g/--gutmann            Gutmann (35 passes)
@@ -48,26 +48,31 @@ OPTIONS
     --wp-check              Quick write‑protection check (first 8 MB)
     --destroy-partition-table  Zero MBR/GPT only (no data wipe)
 
+  Logging:
+    --log FILE              Write log to specified file (default: timestamped file in TEMP)
+    --no-log                Disable log file creation
+
   Other:
     -b/--buffer SIZE        I/O buffer size (e.g. 1MB, 512KB)
     -v/--verify             Verify after wipe (default)
     -n/--no-verify          Skip verification
-    -l FILE                 Log file (default: secure_wipe.log)
     -y/--yes                Auto‑confirm (dangerous)
     -q/--quiet              Quiet mode (less verbose)
 
 EXAMPLES
-  secure_wipe -L                     # list disks
-  secure_wipe --select               # interactive selection
-  secure_wipe -a /dev/sdb            # read‑only analysis
-  secure_wipe -d -y \\.\PhysicalDrive2  # wipe disk 2 with DoD short
-  secure_wipe --nist-purge /dev/sdc  # NIST Purge wipe
-  secure_wipe --destroy-partition-table \\.\PhysicalDrive0  # wipe MBR/GPT only
+  securewipe -L												# list disks
+  securewipe --select										# interactive selection
+  securewipe -a /dev/sdb									# read‑only analysis
+  securewipe -d -y \\.\PhysicalDrive2						# wipe disk 2 with DoD short
+  securewipe --nist-purge /dev/sdc							# NIST Purge wipe
+  securewipe --destroy-partition-table \\.\PhysicalDrive0	# wipe MBR/GPT only (prompts)
+  securewipe --log ./custom.log /dev/sdb					# write log to custom file
+  securewipe --no-log /dev/sdb								# disable logging
 
 NOTES
   - Always backup important data before wiping.
   - Wiped data cannot be recovered.
-  - System disks are protected by default (use -A to override).
+  - System disks are protected by default.
   - Write‑protected devices will cause operation failure.
   - On Windows use \\.\PhysicalDriveN (N = disk number).
   - On Linux use /dev/sdX, /dev/nvmeXnY, etc.
