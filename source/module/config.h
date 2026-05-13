@@ -20,6 +20,12 @@ typedef struct
  bool autoConfirm;
  bool verbose;
  size_t bufferSize;
+
+ bool emergencyMode;
+ uint64_t emergencySectors;
+ uint64_t blockCount;
+ bool blockGiven;
+ bool bufferGiven;
 } program_config_t;
 
 void configDefault (program_config_t *config);

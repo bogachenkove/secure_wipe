@@ -11,7 +11,7 @@
 #define SECURE_WIPE_DESCRIPTION "Data Destruction Tool"
 #define SECURE_WIPE_AUTHOR "Bogachenko Vyacheslav"
 #define SECURE_WIPE_CONTACT "bogachenkove@outlook.com"
-#define SECURE_WIPE_HOMEPAGE "https://github.com/bogachenkove/securewipe"
+#define SECURE_WIPE_HOMEPAGE "https:"
 #define SECURE_WIPE_LICENSE "MIT License"
 #define SECURE_WIPE_LICENSE_FILE "docs/LICENSE.txt"
 
@@ -100,6 +100,10 @@ void printUsage (const char *programName)
  printf ("  -y, --yes             Auto-confirm (dangerous)\n");
  printf ("  -q, --quiet           Quiet mode\n");
  printf ("  --methods             List wipe methods with descriptions\n");
+ printf ("\nEmergency Mode (write zeros to first N sectors or N blocks):\n");
+ printf ("  --emergency           Enable emergency zero-write mode (requires --buffer and either --sector or --block)\n");
+ printf ("  --sector N            Number of sectors to overwrite (must be >0)\n");
+ printf ("  --block N             Number of blocks to overwrite (block size = --buffer)\n");
 }
 
 void printVersion (void)
@@ -134,7 +138,7 @@ void printLicense (void)
  {
   printf ("License file not found locally.\n");
   printf ("Please read the license agreement online:\n");
-  printf ("https://raw.githubusercontent.com/bogachenkove/securewipe/stable/%s\n", SECURE_WIPE_LICENSE_FILE);
+  printf ("https:");
  }
 }
 
@@ -201,15 +205,15 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
    printSupport ();
    exit (0);
   }
-  else if (strcmp (argv[argIndex], "-L") == 0 || strcmp (argv[argIndex], "--list") == 0)
+  else if (strcmp (argv[argIndex], "-L") == 0 || strcmp (argv[argIndex], "--list-storage") == 0)
   {
    config->listDisks = true;
   }
-  else if (strcmp (argv[argIndex], "-S") == 0 || strcmp (argv[argIndex], "--select") == 0)
+  else if (strcmp (argv[argIndex], "-S") == 0 || strcmp (argv[argIndex], "--select-storage") == 0)
   {
    config->selectDisk = true;
   }
-  else if (strcmp (argv[argIndex], "-A") == 0)
+  else if (strcmp (argv[argIndex], "-A") == 0 || strcmp(argv[argIndex], "--show-system-storage") == 0)
   {
    config->showAllDisks = true;
   }
@@ -226,11 +230,15 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
     int nextArg = ++argIndex;
     config->passes = (uint32_t) atoi (argv[nextArg]);
     if (config->passes < 1 || config->passes > 100)
+    {
+     fprintf (stderr, "ERROR: --random requires a number between 1 and 100. See --help.\n");
      return false;
+    }
    }
    else
    {
-    config->passes = 3;
+    fprintf (stderr, "ERROR: --random requires a number of passes (e.g., --random 3). See --help.\n");
+    return false;
    }
   }
   else if (strcmp (argv[argIndex], "--dod-short") == 0)
@@ -275,13 +283,15 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
     size_t newSize = parseSizeWithUnit (argv[++argIndex]);
     if (newSize == 0 || bufferSetSize (newSize) != 0)
     {
-     fprintf (stderr, "Invalid buffer size. Use format like 1MB, 512KB.\n");
+     fprintf (stderr, "ERROR: Invalid buffer size. Use format like 1MB, 512KB. See --help.\n");
      return false;
     }
     config->bufferSize = newSize;
+    config->bufferGiven = true;
    }
    else
    {
+    fprintf (stderr, "ERROR: --buffer requires a size argument (e.g., --buffer 1M). See --help.\n");
     return false;
    }
   }
@@ -316,6 +326,7 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
    }
    else
    {
+    fprintf (stderr, "ERROR: --log requires a file path. See --help.\n");
     return false;
    }
   }
@@ -340,14 +351,101 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
   {
    config->verbose = false;
   }
+  else if (strcmp (argv[argIndex], "--sector") == 0)
+  {
+   if (argIndex + 1 < argc)
+   {
+    config->emergencySectors = strtoull (argv[++argIndex], NULL, 10);
+    if (config->emergencySectors == 0)
+    {
+     fprintf (stderr, "ERROR: --sector must be a positive number. See --help.\n");
+     return false;
+    }
+   }
+   else
+   {
+    fprintf (stderr, "ERROR: --sector requires a number. See --help.\n");
+    return false;
+   }
+  }
+  else if (strcmp (argv[argIndex], "--block") == 0)
+  {
+   if (argIndex + 1 < argc)
+   {
+    config->blockCount = strtoull (argv[++argIndex], NULL, 10);
+    if (config->blockCount == 0)
+    {
+     fprintf (stderr, "ERROR: --block must be a positive number. See --help.\n");
+     return false;
+    }
+    config->blockGiven = true;
+   }
+   else
+   {
+    fprintf (stderr, "ERROR: --block requires a number. See --help.\n");
+    return false;
+   }
+  }
+  else if (strcmp (argv[argIndex], "--emergency") == 0)
+  {
+   config->emergencyMode = true;
+  }
   else if (argv[argIndex][0] != '-')
   {
    snprintf (config->devicePath, sizeof (config->devicePath), "%s", argv[argIndex]);
   }
   else
   {
+   fprintf (stderr, "ERROR: Unknown option '%s'. See --help for usage.\n", argv[argIndex]);
    return false;
   }
  }
+
+ if (config->emergencyMode)
+ {
+  if (!config->bufferGiven)
+  {
+   fprintf (stderr, "ERROR: --emergency requires --buffer SIZE (e.g., --buffer 1M). See --help.\n");
+   return false;
+  }
+
+  if (config->blockGiven && config->emergencySectors != 0)
+  {
+   fprintf (stderr, "ERROR: --emergency cannot use both --sector and --block. Choose one. See --help.\n");
+   return false;
+  }
+
+  if (!config->blockGiven && config->emergencySectors == 0)
+  {
+   fprintf (stderr, "ERROR: --emergency requires either --sector N or --block N. See --help.\n");
+   return false;
+  }
+
+  if (config->blockGiven)
+  {
+   size_t bytesPerBlock = config->bufferSize;
+   if (bytesPerBlock % SECTOR_SIZE != 0)
+   {
+    fprintf (stderr, "ERROR: buffer size (%zu) must be multiple of sector size (%d). See --help.\n", bytesPerBlock, SECTOR_SIZE);
+    return false;
+   }
+   uint64_t sectorsPerBlock = bytesPerBlock / SECTOR_SIZE;
+   config->emergencySectors = config->blockCount * sectorsPerBlock;
+  }
+
+  if (config->listDisks || config->selectDisk || config->analyzeOnly || config->destroyPartitionTable || config->quickWpCheck || config->skipAnalysis)
+  {
+   fprintf (stderr, "ERROR: --emergency is incompatible with other operation flags (--list, --select, --analyze, --destroy-partition-table, "
+                    "--wp-check, --skip-analysis). See --help.\n");
+   return false;
+  }
+
+  if (strlen (config->devicePath) == 0)
+  {
+   fprintf (stderr, "ERROR: --emergency requires a device path. See --help.\n");
+   return false;
+  }
+ }
+
  return true;
 }

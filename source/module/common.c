@@ -67,14 +67,14 @@ void logMessage (const char *level, const char *format, ...)
  struct tm *timeInfo = localtime (&currentTime);
  strftime (timestamp, sizeof (timestamp), "%Y-%m-%d %H:%M:%S", timeInfo);
 
- va_list args;
+ va_list argumentList;
 
  if (gLogger.verbose || strcmp (level, "ERROR") == 0)
  {
   printf ("[%s] [%s] ", timestamp, level);
-  va_start (args, format);
-  vprintf (format, args);
-  va_end (args);
+  va_start (argumentList, format);
+  vprintf (format, argumentList);
+  va_end (argumentList);
   printf ("\n");
   fflush (stdout);
  }
@@ -82,9 +82,9 @@ void logMessage (const char *level, const char *format, ...)
  if (gLogger.logFile)
  {
   fprintf (gLogger.logFile, "[%s] [%s] ", timestamp, level);
-  va_start (args, format);
-  vfprintf (gLogger.logFile, format, args);
-  va_end (args);
+  va_start (argumentList, format);
+  vfprintf (gLogger.logFile, format, argumentList);
+  va_end (argumentList);
   fprintf (gLogger.logFile, "\n");
   fflush (gLogger.logFile);
  }

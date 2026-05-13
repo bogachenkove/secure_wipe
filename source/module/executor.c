@@ -27,7 +27,6 @@ int runWipe (const program_config_t *config, analysis_result_t *analysis)
 
  bool useExtended = config->analyzeWriteTest || config->quickWpCheck;
  error_code_t wipeError = ERR_OK;
-
  bool analysisInitialized = false;
  bool extendedAnalysisInitialized = false;
 
@@ -272,4 +271,71 @@ cleanup:
  free (wipeConfig);
  free (wipeStats);
  return (wipeError == ERR_OK) ? 0 : 1;
+}
+
+int emergencyWipe(const program_config_t* config)
+{
+    device_t device;
+    error_code_t openStatus = deviceOpen(&device, config->devicePath, false);
+    if (openStatus != ERR_OK)
+    {
+        fprintf(stderr, "Failed to open device %s: %s\n", config->devicePath, errorToString(openStatus));
+        return 1;
+    }
+
+    uint64_t sectorsToWrite = config->emergencySectors;
+    if (sectorsToWrite > device.sectorCount)
+    {
+        fprintf(stderr, "Requested %llu sectors, but device has only %llu sectors\n", (unsigned long long) sectorsToWrite,
+            (unsigned long long) device.sectorCount);
+        deviceClose(&device);
+        return 1;
+    }
+
+    size_t bufferBytes = config->bufferSize;
+    if (bufferBytes % SECTOR_SIZE != 0)
+    {
+        fprintf(stderr, "Buffer size (%zu) must be multiple of sector size (%d)\n", bufferBytes, SECTOR_SIZE);
+        deviceClose(&device);
+        return 1;
+    }
+
+    uint32_t sectorsPerBuffer = (uint32_t)(bufferBytes / SECTOR_SIZE);
+    uint8_t* zeroBuffer = (uint8_t*)alignedAlloc(bufferBytes);
+    if (!zeroBuffer)
+    {
+        fprintf(stderr, "Failed to allocate %zu bytes for buffer\n", bufferBytes);
+        deviceClose(&device);
+        return 1;
+    }
+    memset(zeroBuffer, 0, bufferBytes);
+
+    uint64_t writtenSectors = 0;
+    printf("Emergency zero-write: %llu sectors, buffer %zu bytes\n", (unsigned long long) sectorsToWrite, bufferBytes);
+
+    while (writtenSectors < sectorsToWrite)
+    {
+        uint32_t chunkSectors = sectorsPerBuffer;
+        if (writtenSectors + chunkSectors > sectorsToWrite)
+            chunkSectors = (uint32_t)(sectorsToWrite - writtenSectors);
+
+        error_code_t writeStatus = deviceWriteSectors(&device, writtenSectors, chunkSectors, zeroBuffer);
+        if (writeStatus != ERR_OK)
+        {
+            fprintf(stderr, "\nWrite error at sector %llu: %s\n", (unsigned long long) writtenSectors, errorToString(writeStatus));
+            alignedFree(zeroBuffer);
+            deviceClose(&device);
+            return 1;
+        }
+
+        writtenSectors += chunkSectors;
+        printf("\rProgress: %llu / %llu sectors (%.1f%%)", (unsigned long long) writtenSectors, (unsigned long long) sectorsToWrite,
+            100.0 * writtenSectors / sectorsToWrite);
+        fflush(stdout);
+    }
+
+    printf("\nEmergency wipe completed successfully.\n");
+    alignedFree(zeroBuffer);
+    deviceClose(&device);
+    return 0;
 }

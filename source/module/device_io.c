@@ -1,10 +1,12 @@
 #include "device_io.h"
 
 #ifdef _WIN32
+
 static error_code_t winDeviceOpen (device_t *device, const char *path, bool readOnly)
 {
  if (!device || !path)
   return ERR_INVALID_ARG;
+
  memset (device, 0, sizeof (device_t));
  snprintf (device->path, sizeof (device->path), "%s", path);
  device->readOnly = readOnly;
@@ -18,16 +20,17 @@ static error_code_t winDeviceOpen (device_t *device, const char *path, bool read
      CreateFileA (path, accessFlags, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
  if (device->handle == INVALID_HANDLE_VALUE)
  {
-  DWORD errorCode = GetLastError ();
-  if (errorCode == ERROR_ACCESS_DENIED)
+  DWORD lastError = GetLastError ();
+  if (lastError == ERROR_ACCESS_DENIED)
    return ERR_PERMISSION;
   return ERR_OPEN_DEVICE;
  }
+
  device->isOpen = true;
  LOG_INFO ("Opened device: %s (mode: %s)", path, readOnly ? "read-only" : "read-write");
 
  DISK_GEOMETRY_EX geometry;
- DWORD bytesReturned;
+ DWORD bytesReturned = 0;
  if (DeviceIoControl (device->handle, IOCTL_DISK_GET_DRIVE_GEOMETRY_EX, NULL, 0, &geometry, sizeof (geometry), &bytesReturned, NULL))
  {
   device->sizeBytes = geometry.DiskSize.QuadPart;
@@ -36,6 +39,7 @@ static error_code_t winDeviceOpen (device_t *device, const char *path, bool read
  else
  {
   GET_LENGTH_INFORMATION lengthInfo;
+  bytesReturned = 0;
   if (DeviceIoControl (device->handle, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, &lengthInfo, sizeof (lengthInfo), &bytesReturned, NULL))
   {
    device->sizeBytes = lengthInfo.Length.QuadPart;
@@ -48,6 +52,7 @@ static error_code_t winDeviceOpen (device_t *device, const char *path, bool read
    return ERR_GET_SIZE;
   }
  }
+
  char sizeString[32];
  formatBytes (device->sizeBytes, sizeString, sizeof (sizeString));
  LOG_INFO ("Device size: %s (%llu sectors)", sizeString, (unsigned long long) device->sectorCount);
@@ -58,6 +63,7 @@ static error_code_t winDeviceClose (device_t *device)
 {
  if (!device)
   return ERR_INVALID_ARG;
+
  if (device->isOpen && device->handle != INVALID_HANDLE_VALUE)
  {
   FlushFileBuffers (device->handle);
@@ -73,16 +79,19 @@ static error_code_t winDeviceReadSectors (device_t *device, uint64_t startSector
 {
  if (!device || !device->isOpen || !buffer)
   return ERR_INVALID_ARG;
+
  LARGE_INTEGER offset;
  offset.QuadPart = (LONGLONG) startSector * device->sectorSize;
  if (!SetFilePointerEx (device->handle, offset, NULL, FILE_BEGIN))
   return ERR_SEEK_DEVICE;
+
  DWORD bytesToRead = count * device->sectorSize;
  DWORD bytesRead = 0;
  if (!ReadFile (device->handle, buffer, bytesToRead, &bytesRead, NULL))
   return ERR_READ_DEVICE;
  if (bytesRead != bytesToRead)
   return ERR_READ_DEVICE;
+
  return ERR_OK;
 }
 
@@ -90,16 +99,18 @@ static error_code_t winDeviceWriteSectors (device_t *device, uint64_t startSecto
 {
  if (!device || !device->isOpen || !buffer || device->readOnly)
   return ERR_INVALID_ARG;
+
  LARGE_INTEGER offset;
  offset.QuadPart = (LONGLONG) startSector * device->sectorSize;
  if (!SetFilePointerEx (device->handle, offset, NULL, FILE_BEGIN))
   return ERR_SEEK_DEVICE;
+
  DWORD bytesToWrite = count * device->sectorSize;
  DWORD bytesWritten = 0;
  if (!WriteFile (device->handle, buffer, bytesToWrite, &bytesWritten, NULL))
  {
-  DWORD errorCode = GetLastError ();
-  if (errorCode == ERROR_WRITE_PROTECT)
+  DWORD lastError = GetLastError ();
+  if (lastError == ERROR_WRITE_PROTECT)
   {
    LOG_ERROR ("Device is write-protected (ERROR_WRITE_PROTECT)");
    return ERR_PERMISSION;
@@ -108,6 +119,7 @@ static error_code_t winDeviceWriteSectors (device_t *device, uint64_t startSecto
  }
  if (bytesWritten != bytesToWrite)
   return ERR_WRITE_DEVICE;
+
  return ERR_OK;
 }
 
@@ -124,24 +136,24 @@ static error_code_t winDeviceGetSize (device_t *device)
  return (device && device->sizeBytes > 0) ? ERR_OK : ERR_GET_SIZE;
 }
 
-static const device_io_ops_t winIoOps = {.open = winDeviceOpen,
-                                         .close = winDeviceClose,
-                                         .readSectors = winDeviceReadSectors,
-                                         .writeSectors = winDeviceWriteSectors,
-                                         .getSize = winDeviceGetSize,
-                                         .flush = winDeviceFlush};
-
-const device_io_ops_t *deviceIoGetOps (void)
-{
- return &winIoOps;
-}
+static const device_io_ops_t windowsIoOps = {.open = winDeviceOpen,
+                                             .close = winDeviceClose,
+                                             .readSectors = winDeviceReadSectors,
+                                             .writeSectors = winDeviceWriteSectors,
+                                             .getSize = winDeviceGetSize,
+                                             .flush = winDeviceFlush};
 
 #else
+
+#include <sys/stat.h>
+#include <errno.h>
+#include <linux/fs.h>
 
 static error_code_t posixDeviceOpen (device_t *device, const char *path, bool readOnly)
 {
  if (!device || !path)
   return ERR_INVALID_ARG;
+
  memset (device, 0, sizeof (device_t));
  snprintf (device->path, sizeof (device->path), "%s", path);
  device->readOnly = readOnly;
@@ -157,6 +169,7 @@ static error_code_t posixDeviceOpen (device_t *device, const char *path, bool re
    return ERR_PERMISSION;
   return ERR_OPEN_DEVICE;
  }
+
  device->isOpen = true;
  LOG_INFO ("Opened device: %s (mode: %s)", path, readOnly ? "read-only" : "read-write");
 
@@ -182,6 +195,7 @@ static error_code_t posixDeviceOpen (device_t *device, const char *path, bool re
    return ERR_GET_SIZE;
   }
  }
+
  char sizeString[32];
  formatBytes (device->sizeBytes, sizeString, sizeof (sizeString));
  LOG_INFO ("Device size: %s (%llu sectors)", sizeString, (unsigned long long) device->sectorCount);
@@ -192,6 +206,7 @@ static error_code_t posixDeviceClose (device_t *device)
 {
  if (!device)
   return ERR_INVALID_ARG;
+
  if (device->isOpen && device->handle >= 0)
  {
   fsync (device->handle);
@@ -207,13 +222,16 @@ static error_code_t posixDeviceReadSectors (device_t *device, uint64_t startSect
 {
  if (!device || !device->isOpen || !buffer)
   return ERR_INVALID_ARG;
+
  off_t offset = (off_t) startSector * device->sectorSize;
  if (lseek (device->handle, offset, SEEK_SET) != offset)
   return ERR_SEEK_DEVICE;
+
  size_t bytesToRead = (size_t) count * device->sectorSize;
  ssize_t bytesRead = read (device->handle, buffer, bytesToRead);
  if (bytesRead < 0 || (size_t) bytesRead != bytesToRead)
   return ERR_READ_DEVICE;
+
  return ERR_OK;
 }
 
@@ -221,13 +239,16 @@ static error_code_t posixDeviceWriteSectors (device_t *device, uint64_t startSec
 {
  if (!device || !device->isOpen || !buffer || device->readOnly)
   return ERR_INVALID_ARG;
+
  off_t offset = (off_t) startSector * device->sectorSize;
  if (lseek (device->handle, offset, SEEK_SET) != offset)
   return ERR_SEEK_DEVICE;
+
  size_t bytesToWrite = (size_t) count * device->sectorSize;
  ssize_t bytesWritten = write (device->handle, buffer, bytesToWrite);
  if (bytesWritten < 0 || (size_t) bytesWritten != bytesToWrite)
   return ERR_WRITE_DEVICE;
+
  return ERR_OK;
 }
 
@@ -251,12 +272,16 @@ static const device_io_ops_t posixIoOps = {.open = posixDeviceOpen,
                                            .getSize = posixDeviceGetSize,
                                            .flush = posixDeviceFlush};
 
+#endif
+
 const device_io_ops_t *deviceIoGetOps (void)
 {
+#ifdef _WIN32
+ return &windowsIoOps;
+#else
  return &posixIoOps;
-}
-
 #endif
+}
 
 error_code_t deviceOpen (device_t *device, const char *path, bool readOnly)
 {

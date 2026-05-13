@@ -104,6 +104,7 @@ static error_code_t singlePass (device_t *device, pattern_type_t patternType, co
     uint64_t targetSector = currentSector + offset;
     if (badSectors && analyzerIsBadSector (badSectors, targetSector))
      continue;
+
     if (patternType == PATTERN_RANDOM)
      randomFill (gWipeBuffer, device->sectorSize);
     else

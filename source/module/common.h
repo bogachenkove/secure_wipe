@@ -68,7 +68,6 @@ typedef struct
 } logger_t;
 
 extern logger_t gLogger;
-
 extern char gLogFilePath[MAX_PATH_LEN];
 extern bool gNoLog;
 

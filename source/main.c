@@ -7,8 +7,9 @@
 #include "module/random_gen.h"
 #include "module/wiper.h"
 #include "module/disk_scanner.h"
+#include "module/device_io.h"
 
-int main (int argc, char *argv[])
+int main (int argumentCount, char *argumentVector[])
 {
  platformInit ();
 
@@ -25,17 +26,23 @@ int main (int argc, char *argv[])
   return 1;
  }
 
- program_config_t config;
- configDefault (&config);
+ program_config_t configuration;
+ configDefault (&configuration);
 
- if (!parseArguments (argc, argv, &config))
+ if (!parseArguments (argumentCount, argumentVector, &configuration))
  {
-  printUsage (argv[0]);
   platformCleanup ();
   return 1;
  }
 
- if (config.listDisks)
+ if (configuration.emergencyMode)
+ {
+  int exitCode = emergencyWipe(&configuration);
+  platformCleanup ();
+  return exitCode;
+ }
+
+ if (configuration.listDisks)
  {
   disk_scan_result_t *scanResult = (disk_scan_result_t *) malloc (sizeof (disk_scan_result_t));
   if (!scanResult)
@@ -45,7 +52,7 @@ int main (int argc, char *argv[])
    return 1;
   }
   if (diskScannerScan (scanResult) == ERR_OK)
-   diskScannerPrintList (scanResult, config.showAllDisks);
+   diskScannerPrintList (scanResult, configuration.showAllDisks);
   else
    fprintf (stderr, "Failed to scan disks\n");
   free (scanResult);
@@ -53,9 +60,9 @@ int main (int argc, char *argv[])
   return 0;
  }
 
- if (config.selectDisk || strlen (config.devicePath) == 0)
+ if (configuration.selectDisk || strlen (configuration.devicePath) == 0)
  {
-  if (!interactiveSelectDisk (&config))
+  if (!interactiveSelectDisk (&configuration))
   {
    platformCleanup ();
    return 1;
@@ -66,41 +73,39 @@ int main (int argc, char *argv[])
  {
   if (strlen (gLogFilePath) == 0)
   {
-   const char *tempDir = NULL;
+   const char *temporaryDirectory = NULL;
    char tempPathBuffer[MAX_PATH];
 #ifdef _WIN32
-   tempDir = getenv ("TEMP");
-   if (!tempDir)
+   temporaryDirectory = getenv ("TEMP");
+   if (!temporaryDirectory)
    {
-    DWORD len = GetTempPathA (sizeof (tempPathBuffer), tempPathBuffer);
-    if (len > 0 && len < sizeof (tempPathBuffer))
-    {
-     tempDir = tempPathBuffer;
-    }
+    DWORD length = GetTempPathA (sizeof (tempPathBuffer), tempPathBuffer);
+    if (length > 0 && length < sizeof (tempPathBuffer))
+     temporaryDirectory = tempPathBuffer;
     else
     {
-     char sysDrive[4] = "C:";
-     GetEnvironmentVariableA ("SystemDrive", sysDrive, sizeof (sysDrive));
-     snprintf (tempPathBuffer, sizeof (tempPathBuffer), "%s\\Windows\\Temp", sysDrive);
-     tempDir = tempPathBuffer;
+     char systemDrive[4] = "C:";
+     GetEnvironmentVariableA ("SystemDrive", systemDrive, sizeof (systemDrive));
+     snprintf (tempPathBuffer, sizeof (tempPathBuffer), "%s\\Windows\\Temp", systemDrive);
+     temporaryDirectory = tempPathBuffer;
     }
    }
 #else
-   tempDir = "/tmp";
+   temporaryDirectory = "/tmp";
 #endif
-   time_t now = time (NULL);
-   struct tm *timeInfo = localtime (&now);
+   time_t currentTime = time (NULL);
+   struct tm *timeInfo = localtime (&currentTime);
    char timestamp[32];
    strftime (timestamp, sizeof (timestamp), "%Y%m%d_%H%M%S", timeInfo);
-   snprintf (gLogFilePath, sizeof (gLogFilePath), "%s/securewipe_%s.log", tempDir, timestamp);
+   snprintf (gLogFilePath, sizeof (gLogFilePath), "%s/securewipe_%s.log", temporaryDirectory, timestamp);
   }
-  logInit (gLogFilePath, config.verbose);
-  LOG_INFO ("Secure Wipe started on %s", config.devicePath);
+  logInit (gLogFilePath, configuration.verbose);
+  LOG_INFO ("Secure Wipe started on %s", configuration.devicePath);
  }
  else
  {
-  logInit (NULL, config.verbose);
-  if (config.verbose)
+  logInit (NULL, configuration.verbose);
+  if (configuration.verbose)
    printf ("Logging to file disabled (--no-log).\n");
  }
 
@@ -121,13 +126,13 @@ int main (int argc, char *argv[])
   return 1;
  }
 
- analysis_result_t analysis;
- int exitCode = runWipe (&config, &analysis);
+ analysis_result_t analysisResult;
+ int finalExitCode = runWipe (&configuration, &analysisResult);
 
  wiperCleanup ();
  randomCleanup ();
- LOG_INFO ("Secure Wipe finished with code %d", exitCode);
+ LOG_INFO ("Secure Wipe finished with code %d", finalExitCode);
  logClose ();
  platformCleanup ();
- return exitCode;
+ return finalExitCode;
 }

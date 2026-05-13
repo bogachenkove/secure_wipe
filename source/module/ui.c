@@ -73,9 +73,9 @@ bool interactiveSelectDisk (program_config_t *config)
  }
  diskScannerPrintList (scanResult, config->showAllDisks);
  int safeCount = 0;
- for (int diskIndex = 0; diskIndex < scanResult->count; diskIndex++)
+ for (int index = 0; index < scanResult->count; index++)
  {
-  if (diskScannerIsSafeToWipe (&scanResult->disks[diskIndex]))
+  if (diskScannerIsSafeToWipe (&scanResult->disks[index]))
    safeCount++;
  }
  if (safeCount == 0)

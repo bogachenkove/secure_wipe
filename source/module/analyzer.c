@@ -51,9 +51,9 @@ bool analyzerIsBadSector (const analysis_result_t *result, uint64_t sector)
 {
  if (!result || !result->badSectors)
   return false;
- for (uint64_t sectorIndex = 0; sectorIndex < result->badSectorCount; sectorIndex++)
+ for (uint64_t index = 0; index < result->badSectorCount; index++)
  {
-  if (result->badSectors[sectorIndex] == sector)
+  if (result->badSectors[index] == sector)
    return true;
  }
  return false;
@@ -131,10 +131,10 @@ void analyzerPrintReport (const analysis_result_t *result)
  {
   printf ("\nBad sector addresses (first 20):\n");
   uint64_t showCount = result->badSectorCount > 20 ? 20 : result->badSectorCount;
-  for (uint64_t sectorIndex = 0; sectorIndex < showCount; sectorIndex++)
+  for (uint64_t index = 0; index < showCount; index++)
   {
-   printf ("  Sector %llu (offset 0x%llX)\n", (unsigned long long) result->badSectors[sectorIndex],
-           (unsigned long long) (result->badSectors[sectorIndex] * SECTOR_SIZE));
+   printf ("  Sector %llu (offset 0x%llX)\n", (unsigned long long) result->badSectors[index],
+           (unsigned long long) (result->badSectors[index] * SECTOR_SIZE));
   }
   if (result->badSectorCount > 20)
    printf ("  ... and %llu more\n", (unsigned long long) (result->badSectorCount - 20));
@@ -363,13 +363,9 @@ error_code_t analyzerScanDeviceExtended (device_t *device, extended_analysis_res
        addWpSector (result, testSector);
       }
       else if (writeResult == 2)
-      {
        result->readErrors++;
-      }
       else if (writeResult == 3)
-      {
        result->verifyErrors++;
-      }
      }
     }
     else
@@ -424,8 +420,8 @@ void analyzerPrintExtendedReport (const extended_analysis_result_t *result)
   {
    printf ("\nFirst 10 WP sectors:\n");
    uint64_t showCount = result->wpCount > 10 ? 10 : result->wpCount;
-   for (uint64_t sectorIndex = 0; sectorIndex < showCount; sectorIndex++)
-    printf ("  Sector %llu\n", (unsigned long long) result->writeProtected[sectorIndex]);
+   for (uint64_t index = 0; index < showCount; index++)
+    printf ("  Sector %llu\n", (unsigned long long) result->writeProtected[index]);
    if (result->wpCount > 10)
     printf ("  ... and %llu more\n", (unsigned long long) (result->wpCount - 10));
   }
