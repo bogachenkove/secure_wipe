@@ -7,7 +7,7 @@
 #include <ctype.h>
 
 #define SECURE_WIPE_NAME "Secure Wipe"
-#define SECURE_WIPE_VERSION "2.0.5.1"
+#define SECURE_WIPE_VERSION "2.0.6.0"
 #define SECURE_WIPE_DESCRIPTION "Data Destruction Tool"
 #define SECURE_WIPE_AUTHOR "Bogachenko Vyacheslav"
 #define SECURE_WIPE_CONTACT "bogachenkove@outlook.com"

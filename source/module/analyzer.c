@@ -1,6 +1,27 @@
 #include "analyzer.h"
 #include "platform.h"
 
+static error_code_t growUint64Array (uint64_t **array, size_t *capacity, size_t *count)
+{
+ if (*count >= *capacity)
+ {
+  size_t newCapacity = *capacity * 2;
+  if (newCapacity > MAX_BAD_SECTORS)
+   newCapacity = MAX_BAD_SECTORS;
+  if (*count >= MAX_BAD_SECTORS)
+  {
+   LOG_WARN ("Maximum bad sector count reached");
+   return ERR_MEMORY;
+  }
+  uint64_t *newArray = (uint64_t *) realloc (*array, newCapacity * sizeof (uint64_t));
+  if (!newArray)
+   return ERR_MEMORY;
+  *array = newArray;
+  *capacity = newCapacity;
+ }
+ return ERR_OK;
+}
+
 error_code_t analyzerInitResult (analysis_result_t *result)
 {
  if (!result)
@@ -26,22 +47,9 @@ error_code_t analyzerAddBadSector (analysis_result_t *result, uint64_t sector)
 {
  if (!result)
   return ERR_INVALID_ARG;
- if (result->badSectorCount >= result->badSectorsCapacity)
- {
-  size_t newCapacity = result->badSectorsCapacity * 2;
-  if (newCapacity > MAX_BAD_SECTORS)
-   newCapacity = MAX_BAD_SECTORS;
-  if (result->badSectorCount >= MAX_BAD_SECTORS)
-  {
-   LOG_WARN ("Maximum bad sector count reached");
-   return ERR_MEMORY;
-  }
-  uint64_t *newArray = (uint64_t *) realloc (result->badSectors, newCapacity * sizeof (uint64_t));
-  if (!newArray)
-   return ERR_MEMORY;
-  result->badSectors = newArray;
-  result->badSectorsCapacity = newCapacity;
- }
+ error_code_t growResult = growUint64Array (&result->badSectors, &result->badSectorsCapacity, &result->badSectorCount);
+ if (growResult != ERR_OK)
+  return growResult;
  result->badSectors[result->badSectorCount++] = sector;
  logBadSector (sector, "scan");
  return ERR_OK;
@@ -88,9 +96,9 @@ error_code_t analyzerScanDevice (device_t *device, analysis_result_t *result, pr
   }
   else
   {
-   for (uint32_t offset = 0; offset < sectorsToRead; offset++)
+   for (uint32_t sectorOffset = 0; sectorOffset < sectorsToRead; sectorOffset++)
    {
-	uint64_t sectorToCheck = currentSector + offset;
+	uint64_t sectorToCheck = currentSector + sectorOffset;
 	if (ioOps->readSectors (device, sectorToCheck, 1, readBuffer) == ERR_OK)
 	 result->readableSectors++;
 	else
@@ -162,12 +170,12 @@ uint64_t analyzerVerifyWipe (device_t *device, progress_callback_t progress)
    sectorsToRead = (uint32_t) (device->sectorCount - currentSector);
   if (ioOps->readSectors (device, currentSector, sectorsToRead, readBuffer) != ERR_OK)
   {
-   for (uint32_t offset = 0; offset < sectorsToRead; offset++)
+   for (uint32_t sectorOffset = 0; sectorOffset < sectorsToRead; sectorOffset++)
    {
-	if (ioOps->readSectors (device, currentSector + offset, 1, readBuffer) != ERR_OK)
+	if (ioOps->readSectors (device, currentSector + sectorOffset, 1, readBuffer) != ERR_OK)
 	{
 	 errorCount++;
-	 logBadSector (currentSector + offset, "verification");
+	 logBadSector (currentSector + sectorOffset, "verification");
 	}
    }
   }
@@ -223,17 +231,9 @@ static error_code_t addWpSector (extended_analysis_result_t *result, uint64_t se
 {
  if (!result)
   return ERR_INVALID_ARG;
- if (result->wpCount >= result->wpCapacity)
- {
-  size_t newCapacity = result->wpCapacity * 2;
-  if (newCapacity > MAX_BAD_SECTORS)
-   newCapacity = MAX_BAD_SECTORS;
-  uint64_t *newArray = (uint64_t *) realloc (result->writeProtected, newCapacity * sizeof (uint64_t));
-  if (!newArray)
-   return ERR_MEMORY;
-  result->writeProtected = newArray;
-  result->wpCapacity = newCapacity;
- }
+ error_code_t growResult = growUint64Array (&result->writeProtected, &result->wpCapacity, &result->wpCount);
+ if (growResult != ERR_OK)
+  return growResult;
  result->writeProtected[result->wpCount++] = sector;
  if (sector < result->firstWpSector)
   result->firstWpSector = sector;

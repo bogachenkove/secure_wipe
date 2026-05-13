@@ -65,6 +65,11 @@ void logMessage (const char *level, const char *format, ...)
  char timestamp[64];
  time_t currentTime = time (NULL);
  struct tm *timeInfo = localtime (&currentTime);
+ if (!timeInfo)
+ {
+  fprintf (stderr, "localtime failed\n");
+  return;
+ }
  strftime (timestamp, sizeof (timestamp), "%Y-%m-%d %H:%M:%S", timeInfo);
 
  va_list argumentList;

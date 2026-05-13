@@ -57,7 +57,7 @@ static bool isPhysicalDriveMounted (int diskNumber)
  if (volumeHandle == INVALID_HANDLE_VALUE)
   return false;
  wchar_t volumeName[MAX_PATH];
- DWORD bytesReturned;
+ DWORD bytesReturned = 0;
  bool found = false;
  while (FindNextVolumeW (volumeHandle, volumeName, MAX_PATH))
  {
@@ -68,6 +68,7 @@ static bool isPhysicalDriveMounted (int diskNumber)
    if (currentVolume != INVALID_HANDLE_VALUE)
    {
 	VOLUME_DISK_EXTENTS extents;
+	bytesReturned = 0;
 	if (DeviceIoControl (currentVolume, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, &extents, sizeof (extents), &bytesReturned, NULL))
 	{
 	 for (DWORD extentIndex = 0; extentIndex < extents.NumberOfDiskExtents; extentIndex++)
