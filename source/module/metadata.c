@@ -7,11 +7,11 @@
 #include <ctype.h>
 
 #define SECURE_WIPE_NAME "Secure Wipe"
-#define SECURE_WIPE_VERSION "2.0.4.0"
+#define SECURE_WIPE_VERSION "2.0.4.1"
 #define SECURE_WIPE_DESCRIPTION "Data Destruction Tool"
 #define SECURE_WIPE_AUTHOR "Bogachenko Vyacheslav"
 #define SECURE_WIPE_CONTACT "bogachenkove@outlook.com"
-#define SECURE_WIPE_HOMEPAGE "https:"
+#define SECURE_WIPE_HOMEPAGE "https://github.com/bogachenkove/securewipe"
 #define SECURE_WIPE_LICENSE "MIT License"
 #define SECURE_WIPE_LICENSE_FILE "docs/LICENSE.txt"
 
@@ -138,7 +138,7 @@ void printLicense (void)
  {
   printf ("License file not found locally.\n");
   printf ("Please read the license agreement online:\n");
-  printf ("https:");
+  printf ("https://raw.githubusercontent.com/bogachenkove/securewipe/stable/%s\n", SECURE_WIPE_LICENSE_FILE);
  }
 }
 
