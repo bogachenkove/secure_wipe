@@ -1,15 +1,15 @@
-Secure Wipe v2.0.3.1
+Secure Wipe v2.0.4.0
 Data Destruction Tool
 
 DESCRIPTION
-  Secure Wipe is a cross-platform (Windows/Linux) utility for irreversibly
+  Secure Wipe is a cross-platform (Windows/Linux/macOS) utility for irreversibly
   erasing data on storage devices using multiple overwriting methods.
   It supports analysis, bad sector detection, write‑protection testing,
   partition table destruction, and verification.
 
 REQUIREMENTS
   - Windows: Administrator privileges
-  - Linux: root privileges
+  - Linux/macOS: root privileges
 
 BUILD
   The project supports multiple platforms (Windows, Linux, macOS) via two 
@@ -34,55 +34,62 @@ BUILD
 
 USAGE
   securewipe [options] <device>
-  securewipe --list [-A]
-  securewipe --select
+  securewipe -L, --list-storage [-A, --show-system-storage]
+  securewipe -S, --select-storage
 
 OPTIONS
   Information:
-    --version, --about, --license, --support, -h/--help, --methods
+    --version, --about, --license, --support, --help, --methods
 
   Disk discovery:
-    -L/--list               List disks
-    -S/--select             Interactive disk selection
-    -A                      Show all disks (including system)
+    -L, --list-storage               List storage devices
+    -S, --select-storage             Interactive storage device selection
+    -A, --show-system-storage        Show all devices (including system disks)
 
   Wipe methods:
-    -z/--zero               Zero fill (1 pass)
-    -r N/--random N         Random data (N passes, 1‑100)
-    -d/--dod                DoD 5220.22-M short (3 passes)
-    -D/--dod-full           DoD 5220.22-M ECE (7 passes)
-    -s/--schneier           Schneier (7 passes: 0xFF, 0x00, 5×random)
-    -g/--gutmann            Gutmann (35 passes)
-    --afssi                 AFSSI‑5020 (3 passes: 0x00, 0xFF, random)
-    --nist-clear            NIST Clear (1 pass: zeros)
-    --nist-purge            NIST Purge (3 passes: random, zero, random)
+    --zero                           Zero fill (1 pass)
+    --random N                       Random data (N passes, 1‑100)
+    --dod-short                      DoD 5220.22-M short (3 passes) [default]
+    --dod-full                       DoD 5220.22-M ECE (7 passes)
+    --schneier                       Schneier (7 passes: 0xFF, 0x00, 5×random)
+    --gutmann                        Gutmann (35 passes)
+    --afssi-5020                     AFSSI‑5020 (3 passes: 0x00, 0xFF, random)
+    --nist-clear                     NIST Clear (1 pass: zeros)
+    --nist-purge                     NIST Purge (3 passes: random, zero, random)
 
   Analysis:
-    -a/--analyze            Read‑only analysis (bad sectors, readability)
-    --analyze-write         Write test analysis (destroys data!)
-    --wp-check              Quick write‑protection check (first 8 MB)
-    --destroy-partition-table  Zero MBR/GPT only (no data wipe)
+    --analyze                        Read‑only analysis (bad sectors, readability)
+    --analyze-write                  Write test analysis (destroys data!)
+    --wp-check                       Quick write‑protection check (first 8 MB)
+    --destroy-partition-table        Zero MBR/GPT only (no data wipe)
+
+  Emergency mode (zero‑write only, no full wipe):
+    --emergency                      Enable emergency zero‑write mode
+    --sector N                       Number of sectors to overwrite (must be >0)
+    --block N                        Number of blocks to overwrite (block size = --buffer)
+    (Requires --buffer, and either --sector or --block)
 
   Logging:
-    --log FILE              Write log to specified file (default: timestamped file in TEMP)
-    --no-log                Disable log file creation
+    --log FILE                       Write log to specified file (default: timestamped file in TEMP)
+    --no-log                         Disable log file creation
 
   Other:
-    -b/--buffer SIZE        I/O buffer size (e.g. 1MB, 512KB)
-    -v/--verify             Verify after wipe (default)
-    -n/--no-verify          Skip verification
-    -y/--yes                Auto‑confirm (dangerous)
-    -q/--quiet              Quiet mode (less verbose)
+    -b, --buffer SIZE                I/O buffer size (e.g. 1MB, 512KB)
+    -v, --verify                     Verify after wipe (default)
+    -n, --no-verify                  Skip verification
+    -y, --yes                        Auto‑confirm (dangerous)
+    -q, --quiet                      Quiet mode (less verbose)
 
 EXAMPLES
-  securewipe -L												# list disks
-  securewipe --select										# interactive selection
-  securewipe -a /dev/sdb									# read‑only analysis
-  securewipe -d -y \\.\PhysicalDrive2						# wipe disk 2 with DoD short
-  securewipe --nist-purge /dev/sdc							# NIST Purge wipe
-  securewipe --destroy-partition-table \\.\PhysicalDrive0	# wipe MBR/GPT only (prompts)
-  securewipe --log ./custom.log /dev/sdb					# write log to custom file
-  securewipe --no-log /dev/sdb								# disable logging
+  securewipe -L --show-system-storage          # list all disks including system
+  securewipe --select-storage                  # interactive device selection
+  securewipe --analyze /dev/sdb                # read‑only analysis
+  securewipe --dod-short -y \\.\PhysicalDrive2 # wipe disk 2 with DoD short
+  securewipe --nist-purge /dev/sdc             # NIST Purge wipe
+  securewipe --destroy-partition-table \\.\PhysicalDrive0   # wipe MBR/GPT only
+  securewipe --log ./custom.log /dev/sdb       # write log to custom file
+  securewipe --no-log /dev/sdb                 # disable logging
+  securewipe --emergency --buffer 1M --sector 1000 /dev/sdc   # emergency zero‑write first 1000 sectors
 
 NOTES
   - Always backup important data before wiping.
@@ -92,6 +99,7 @@ NOTES
   - On Windows use \\.\PhysicalDriveN (N = disk number).
   - On Linux use /dev/sdX, /dev/nvmeXnY, etc.
   - Verification reads entire device after wipe to check for errors.
+  - Emergency mode is intended for quick partial overwrite (e.g., wiping partition table or boot area).
 
 LICENSE
   MIT License – see docs/LICENSE.txt
