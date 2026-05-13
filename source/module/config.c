@@ -4,8 +4,8 @@
 void configDefault (program_config_t *config)
 {
  memset (config, 0, sizeof (program_config_t));
- config->method = WIPE_METHOD_DOD_SHORT;
- config->passes = 3;
+ config->method = WIPE_METHOD_ZERO;
+ config->passes = 1;
  config->verify = true;
  config->verbose = true;
  config->bufferSize = DEFAULT_BUFFER_SIZE;

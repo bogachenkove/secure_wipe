@@ -71,36 +71,36 @@ int main (int argumentCount, char *argumentVector[])
 
  if (!gNoLog)
  {
-  if (strlen (gLogFilePath) == 0)
-  {
-   const char *temporaryDirectory = NULL;
-   char tempPathBuffer[MAX_PATH];
+     if (strlen(gLogFilePath) == 0)
+     {
+         const char* temporaryDirectory = NULL;
 #ifdef _WIN32
-   temporaryDirectory = getenv ("TEMP");
-   if (!temporaryDirectory)
-   {
-	DWORD length = GetTempPathA (sizeof (tempPathBuffer), tempPathBuffer);
-	if (length > 0 && length < sizeof (tempPathBuffer))
-	 temporaryDirectory = tempPathBuffer;
-	else
-	{
-	 char systemDrive[4] = "C:";
-	 GetEnvironmentVariableA ("SystemDrive", systemDrive, sizeof (systemDrive));
-	 snprintf (tempPathBuffer, sizeof (tempPathBuffer), "%s\\Windows\\Temp", systemDrive);
-	 temporaryDirectory = tempPathBuffer;
-	}
-   }
+         char tempPathBuffer[MAX_PATH_LEN];
+         temporaryDirectory = getenv("TEMP");
+         if (!temporaryDirectory)
+         {
+             DWORD length = GetTempPathA(sizeof(tempPathBuffer), tempPathBuffer);
+             if (length > 0 && length < sizeof(tempPathBuffer))
+                 temporaryDirectory = tempPathBuffer;
+             else
+             {
+                 char systemDrive[4] = "C:";
+                 GetEnvironmentVariableA("SystemDrive", systemDrive, sizeof(systemDrive));
+                 snprintf(tempPathBuffer, sizeof(tempPathBuffer), "%s\\Windows\\Temp", systemDrive);
+                 temporaryDirectory = tempPathBuffer;
+             }
+         }
 #else
-   temporaryDirectory = "/tmp";
+         temporaryDirectory = "/tmp";
 #endif
-   time_t currentTime = time (NULL);
-   struct tm *timeInfo = localtime (&currentTime);
-   char timestamp[32];
-   strftime (timestamp, sizeof (timestamp), "%Y%m%d_%H%M%S", timeInfo);
-   snprintf (gLogFilePath, sizeof (gLogFilePath), "%s/securewipe_%s.log", temporaryDirectory, timestamp);
-  }
-  logInit (gLogFilePath, configuration.verbose);
-  LOG_INFO ("Secure Wipe started on %s", configuration.devicePath);
+         time_t currentTime = time(NULL);
+         struct tm* timeInfo = localtime(&currentTime);
+         char timestamp[32];
+         strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", timeInfo);
+         snprintf(gLogFilePath, sizeof(gLogFilePath), "%s/securewipe_%s.log", temporaryDirectory, timestamp);
+     }
+     logInit(gLogFilePath, configuration.verbose);
+     LOG_INFO("Secure Wipe started on %s", configuration.devicePath);
  }
  else
  {

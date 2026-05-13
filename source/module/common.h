@@ -20,7 +20,7 @@ int bufferSetSize (size_t sizeBytes);
 void bufferGetSizeInfo (size_t *outSizeBytes, size_t *outSectors);
 
 #define SECTOR_SIZE 512
-#define MAX_PATH_LEN 260
+#define MAX_PATH_LEN 512
 #define MAX_BAD_SECTORS 100000
 
 typedef enum

@@ -7,7 +7,7 @@
 #include <ctype.h>
 
 #define SECURE_WIPE_NAME "Secure Wipe"
-#define SECURE_WIPE_VERSION "2.0.5.0"
+#define SECURE_WIPE_VERSION "2.0.5.1"
 #define SECURE_WIPE_DESCRIPTION "Data Destruction Tool"
 #define SECURE_WIPE_AUTHOR "Bogachenko Vyacheslav"
 #define SECURE_WIPE_CONTACT "bogachenkove@outlook.com"
@@ -87,7 +87,7 @@ void printUsage (const char *programName)
  printf ("\nWipe Methods:\n");
  printf ("  --zero                Zero fill (1 pass)\n");
  printf ("  --random N            Random data (N passes)\n");
- printf ("  --dod-short           DoD 5220.22-M short (3 passes) [default]\n");
+ printf ("  --dod-short           DoD 5220.22-M short (3 passes)\n");
  printf ("  --dod-full            DoD 5220.22-M ECE (7 passes)\n");
  printf ("  --schneier            Bruce Schneier Algorithm (7 passes)\n");
  printf ("  --gutmann             Gutmann method (35 passes)\n");
