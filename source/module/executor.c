@@ -119,6 +119,13 @@ int runWipe (const program_config_t *config, analysis_result_t *analysis)
   }
  }
 
+ if (config->skipAnalysis && !config->analyzeOnly)
+ {
+  LOG_INFO ("Skipping device analysis (--skip-analysis)");
+  deviceClose (device);
+  goto afterAnalysis;
+ }
+
  if (useExtended)
  {
   if (analyzerInitExtendedResult (extendedAnalysis) != ERR_OK)
@@ -155,7 +162,7 @@ int runWipe (const program_config_t *config, analysis_result_t *analysis)
   analyzerPrintExtendedReport (extendedAnalysis);
   memcpy (analysis, &extendedAnalysis->base, sizeof (analysis_result_t));
  }
- else
+ else if (!config->skipAnalysis)
  {
   if (analyzerScanDevice (device, analysis, progressHandler) != ERR_OK)
   {
@@ -175,6 +182,7 @@ int runWipe (const program_config_t *config, analysis_result_t *analysis)
 
  deviceClose (device);
 
+afterAnalysis:
  uint32_t actualPasses;
  if (config->method == WIPE_METHOD_RANDOM)
   actualPasses = config->passes;

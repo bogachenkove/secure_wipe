@@ -7,7 +7,7 @@
 #include <ctype.h>
 
 #define SECURE_WIPE_NAME "Secure Wipe"
-#define SECURE_WIPE_VERSION "2.0.3.1"
+#define SECURE_WIPE_VERSION "2.0.4.0"
 #define SECURE_WIPE_DESCRIPTION "Data Destruction Tool"
 #define SECURE_WIPE_AUTHOR "Bogachenko Vyacheslav"
 #define SECURE_WIPE_CONTACT "bogachenkove@outlook.com"
@@ -65,40 +65,41 @@ void printUsage (const char *programName)
  printf ("       %s --list [-A]\n", programName);
  printf ("       %s --select\n\n", programName);
  printf ("Information flags:\n");
- printf ("  --version            Show version information\n");
- printf ("  --about              Show information about the program\n");
- printf ("  --license            Show license information\n");
- printf ("  --support            Show support/donation information\n");
- printf ("  -h, --help           Show this help message\n");
+ printf ("  --version             Show version information\n");
+ printf ("  --about               Show information about the program\n");
+ printf ("  --license             Show license information\n");
+ printf ("  --support             Show support information\n");
+ printf ("  --help                Show this help message\n");
  printf ("\nDisk Discovery:\n");
- printf ("  -L, --list           List disks\n");
- printf ("  -S, --select         Interactive disk selection\n");
- printf ("  -A                   Show all disks (including system)\n");
+ printf ("  -L, --list            List disks\n");
+ printf ("  -S, --select          Interactive disk selection\n");
+ printf ("  -A                    Show all disks (including system)\n");
  printf ("\nWipe Methods:\n");
- printf ("  -z, --zero           Zero fill (1 pass)\n");
- printf ("  -r N, --random N     Random data (N passes)\n");
- printf ("  -d, --dod            DoD 5220.22-M short (3 passes) [default]\n");
- printf ("  -D, --dod-full       DoD 5220.22-M ECE (7 passes)\n");
- printf ("  -s, --schneier       Bruce Schneier Algorithm (7 passes)\n");
- printf ("  -g, --gutmann        Gutmann method (35 passes)\n");
- printf ("  --afssi              AFSSI-5020 (3 passes)\n");
- printf ("  --nist-clear         NIST SP-800-88 Clear (1 pass)\n");
- printf ("  --nist-purge         NIST SP-800-88 Purge (3 passes)\n");
+ printf ("  --zero                Zero fill (1 pass)\n");
+ printf ("  --random N            Random data (N passes)\n");
+ printf ("  --dod-short           DoD 5220.22-M short (3 passes) [default]\n");
+ printf ("  --dod-full            DoD 5220.22-M ECE (7 passes)\n");
+ printf ("  --schneier            Bruce Schneier Algorithm (7 passes)\n");
+ printf ("  --gutmann             Gutmann method (35 passes)\n");
+ printf ("  --afssi               AFSSI-5020 (3 passes)\n");
+ printf ("  --nist-clear          NIST SP-800-88 Clear (1 pass)\n");
+ printf ("  --nist-purge          NIST SP-800-88 Purge (3 passes)\n");
  printf ("\nAnalysis Options:\n");
- printf ("  -a, --analyze        Read-only analysis\n");
- printf ("  --analyze-write      Analysis with write test (destroys data!)\n");
- printf ("  --wp-check           Quick write-protection check\n");
+ printf ("  --analyze             Read-only analysis (no wiping)\n");
+ printf ("  --skip-analysis       Skip analysis and proceed directly to wipe\n");
+ printf ("  --analyze-write       Analysis with write test (destroys data!)\n");
+ printf ("  --wp-check            Quick write-protection check\n");
  printf ("  --destroy-partition-table   Destroy MBR/GPT only (zero out, no data wipe)\n");
  printf ("\nLogging Options:\n");
- printf ("  --log FILE           Write log to specified file\n");
- printf ("  --no-log             Disable log file creation\n");
+ printf ("  --log FILE            Write log to specified file\n");
+ printf ("  --no-log              Disable log file creation\n");
  printf ("\nOther Options:\n");
- printf ("  -b, --buffer SIZE    I/O buffer size (e.g. 1MB, 512KB)\n");
- printf ("  -v, --verify         Verify after wipe (default)\n");
- printf ("  -n, --no-verify      Skip verification\n");
- printf ("  -y, --yes            Auto-confirm (dangerous)\n");
- printf ("  -q, --quiet          Quiet mode\n");
- printf ("  --methods            List wipe methods with descriptions\n");
+ printf ("  -b, --buffer SIZE     I/O buffer size (e.g. 1MB, 512KB)\n");
+ printf ("  -v, --verify          Verify after wipe (default)\n");
+ printf ("  -n, --no-verify       Skip verification\n");
+ printf ("  -y, --yes             Auto-confirm (dangerous)\n");
+ printf ("  -q, --quiet           Quiet mode\n");
+ printf ("  --methods             List wipe methods with descriptions\n");
 }
 
 void printVersion (void)
@@ -170,7 +171,7 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
  }
  for (int argIndex = 1; argIndex < argc; argIndex++)
  {
-  if (strcmp (argv[argIndex], "-h") == 0 || strcmp (argv[argIndex], "--help") == 0)
+  if (strcmp (argv[argIndex], "--help") == 0)
   {
    printUsage (argv[0]);
    exit (0);
@@ -212,12 +213,12 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
   {
    config->showAllDisks = true;
   }
-  else if (strcmp (argv[argIndex], "-z") == 0 || strcmp (argv[argIndex], "--zero") == 0)
+  else if (strcmp (argv[argIndex], "--zero") == 0)
   {
    config->method = WIPE_METHOD_ZERO;
    config->passes = 1;
   }
-  else if (strcmp (argv[argIndex], "-r") == 0 || strcmp (argv[argIndex], "--random") == 0)
+  else if (strcmp (argv[argIndex], "--random") == 0)
   {
    config->method = WIPE_METHOD_RANDOM;
    if (argIndex + 1 < argc && argv[argIndex + 1][0] != '-')
@@ -232,27 +233,27 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
     config->passes = 3;
    }
   }
-  else if (strcmp (argv[argIndex], "-d") == 0 || strcmp (argv[argIndex], "--dod") == 0)
+  else if (strcmp (argv[argIndex], "--dod-short") == 0)
   {
    config->method = WIPE_METHOD_DOD_SHORT;
    config->passes = 3;
   }
-  else if (strcmp (argv[argIndex], "-D") == 0 || strcmp (argv[argIndex], "--dod-full") == 0)
+  else if (strcmp (argv[argIndex], "--dod-full") == 0)
   {
    config->method = WIPE_METHOD_DOD_FULL;
    config->passes = 7;
   }
-  else if (strcmp (argv[argIndex], "-s") == 0 || strcmp (argv[argIndex], "--schneier") == 0)
+  else if (strcmp (argv[argIndex], "--schneier") == 0)
   {
    config->method = WIPE_METHOD_SCHNEIER;
    config->passes = 7;
   }
-  else if (strcmp (argv[argIndex], "-g") == 0 || strcmp (argv[argIndex], "--gutmann") == 0)
+  else if (strcmp (argv[argIndex], "--gutmann") == 0)
   {
    config->method = WIPE_METHOD_GUTMANN;
    config->passes = 35;
   }
-  else if (strcmp (argv[argIndex], "--afssi") == 0 || strcmp (argv[argIndex], "--afssi-5020") == 0)
+  else if (strcmp (argv[argIndex], "--afssi-5020") == 0)
   {
    config->method = WIPE_METHOD_AFSSI_5020;
    config->passes = 3;
@@ -284,7 +285,7 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
     return false;
    }
   }
-  else if (strcmp (argv[argIndex], "-a") == 0 || strcmp (argv[argIndex], "--analyze") == 0)
+  else if (strcmp (argv[argIndex], "--analyze") == 0)
   {
    config->analyzeOnly = true;
   }
@@ -297,6 +298,10 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
   {
    config->analyzeOnly = true;
    config->quickWpCheck = true;
+  }
+  else if (strcmp (argv[argIndex], "--skip-analysis") == 0)
+  {
+   config->skipAnalysis = true;
   }
   else if (strcmp (argv[argIndex], "--destroy-partition-table") == 0)
   {

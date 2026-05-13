@@ -6,7 +6,6 @@
 typedef struct
 {
  char devicePath[MAX_PATH_LEN];
- char logPath[MAX_PATH_LEN];
  wipe_method_t method;
  uint32_t passes;
  bool analyzeOnly;
@@ -15,6 +14,7 @@ typedef struct
  bool destroyPartitionTable;
  bool listDisks;
  bool selectDisk;
+ bool skipAnalysis;
  bool showAllDisks;
  bool verify;
  bool autoConfirm;
