@@ -17,7 +17,7 @@ static error_code_t winDeviceOpen (device_t *device, const char *path, bool read
   accessFlags |= GENERIC_WRITE;
 
  device->handle =
-     CreateFileA (path, accessFlags, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
+	 CreateFileA (path, accessFlags, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
  if (device->handle == INVALID_HANDLE_VALUE)
  {
   DWORD lastError = GetLastError ();
@@ -137,11 +137,11 @@ static error_code_t winDeviceGetSize (device_t *device)
 }
 
 static const device_io_ops_t windowsIoOps = {.open = winDeviceOpen,
-                                             .close = winDeviceClose,
-                                             .readSectors = winDeviceReadSectors,
-                                             .writeSectors = winDeviceWriteSectors,
-                                             .getSize = winDeviceGetSize,
-                                             .flush = winDeviceFlush};
+											 .close = winDeviceClose,
+											 .readSectors = winDeviceReadSectors,
+											 .writeSectors = winDeviceWriteSectors,
+											 .getSize = winDeviceGetSize,
+											 .flush = winDeviceFlush};
 
 #else
 
@@ -266,11 +266,11 @@ static error_code_t posixDeviceGetSize (device_t *device)
 }
 
 static const device_io_ops_t posixIoOps = {.open = posixDeviceOpen,
-                                           .close = posixDeviceClose,
-                                           .readSectors = posixDeviceReadSectors,
-                                           .writeSectors = posixDeviceWriteSectors,
-                                           .getSize = posixDeviceGetSize,
-                                           .flush = posixDeviceFlush};
+										   .close = posixDeviceClose,
+										   .readSectors = posixDeviceReadSectors,
+										   .writeSectors = posixDeviceWriteSectors,
+										   .getSize = posixDeviceGetSize,
+										   .flush = posixDeviceFlush};
 
 #endif
 

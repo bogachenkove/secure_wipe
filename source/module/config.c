@@ -11,6 +11,7 @@ void configDefault (program_config_t *config)
  config->bufferSize = DEFAULT_BUFFER_SIZE;
  config->destroyPartitionTable = false;
  config->skipAnalysis = false;
+ config->cycles = 1;
 
  config->emergencyMode = false;
  config->emergencySectors = 0;

@@ -20,6 +20,7 @@ typedef struct
  bool autoConfirm;
  bool verbose;
  size_t bufferSize;
+ uint32_t cycles;
 
  bool emergencyMode;
  uint64_t emergencySectors;

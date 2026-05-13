@@ -67,21 +67,21 @@ static bool isPhysicalDriveMounted (int diskNumber)
    HANDLE currentVolume = CreateFileW (volumeName, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
    if (currentVolume != INVALID_HANDLE_VALUE)
    {
-    VOLUME_DISK_EXTENTS extents;
-    if (DeviceIoControl (currentVolume, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, &extents, sizeof (extents), &bytesReturned, NULL))
-    {
-     for (DWORD extentIndex = 0; extentIndex < extents.NumberOfDiskExtents; extentIndex++)
-     {
-      if ((int) extents.Extents[extentIndex].DiskNumber == diskNumber)
-      {
-       found = true;
-       break;
-      }
-     }
-    }
-    CloseHandle (currentVolume);
-    if (found)
-     break;
+	VOLUME_DISK_EXTENTS extents;
+	if (DeviceIoControl (currentVolume, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, &extents, sizeof (extents), &bytesReturned, NULL))
+	{
+	 for (DWORD extentIndex = 0; extentIndex < extents.NumberOfDiskExtents; extentIndex++)
+	 {
+	  if ((int) extents.Extents[extentIndex].DiskNumber == diskNumber)
+	  {
+	   found = true;
+	   break;
+	  }
+	 }
+	}
+	CloseHandle (currentVolume);
+	if (found)
+	 break;
    }
   }
  }
@@ -110,9 +110,9 @@ bool isDeviceMounted (const char *devicePath)
   {
    if (strcmp (mountDevice, devicePath) == 0)
    {
-    LOG_WARN ("Device %s is mounted at %s", devicePath, mountPoint);
-    found = true;
-    break;
+	LOG_WARN ("Device %s is mounted at %s", devicePath, mountPoint);
+	found = true;
+	break;
    }
   }
  }

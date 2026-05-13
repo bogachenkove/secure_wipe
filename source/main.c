@@ -37,7 +37,7 @@ int main (int argumentCount, char *argumentVector[])
 
  if (configuration.emergencyMode)
  {
-  int exitCode = emergencyWipe(&configuration);
+  int exitCode = emergencyWipe (&configuration);
   platformCleanup ();
   return exitCode;
  }
@@ -79,16 +79,16 @@ int main (int argumentCount, char *argumentVector[])
    temporaryDirectory = getenv ("TEMP");
    if (!temporaryDirectory)
    {
-    DWORD length = GetTempPathA (sizeof (tempPathBuffer), tempPathBuffer);
-    if (length > 0 && length < sizeof (tempPathBuffer))
-     temporaryDirectory = tempPathBuffer;
-    else
-    {
-     char systemDrive[4] = "C:";
-     GetEnvironmentVariableA ("SystemDrive", systemDrive, sizeof (systemDrive));
-     snprintf (tempPathBuffer, sizeof (tempPathBuffer), "%s\\Windows\\Temp", systemDrive);
-     temporaryDirectory = tempPathBuffer;
-    }
+	DWORD length = GetTempPathA (sizeof (tempPathBuffer), tempPathBuffer);
+	if (length > 0 && length < sizeof (tempPathBuffer))
+	 temporaryDirectory = tempPathBuffer;
+	else
+	{
+	 char systemDrive[4] = "C:";
+	 GetEnvironmentVariableA ("SystemDrive", systemDrive, sizeof (systemDrive));
+	 snprintf (tempPathBuffer, sizeof (tempPathBuffer), "%s\\Windows\\Temp", systemDrive);
+	 temporaryDirectory = tempPathBuffer;
+	}
    }
 #else
    temporaryDirectory = "/tmp";

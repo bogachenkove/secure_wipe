@@ -16,6 +16,16 @@ typedef enum
  WIPE_METHOD_AFSSI_5020,
  WIPE_METHOD_NIST_CLEAR,
  WIPE_METHOD_NIST_PURGE,
+ WIPE_METHOD_BSI_VSITR,
+ WIPE_METHOD_RCMP_TSSIT_OPSII,
+ WIPE_METHOD_HMG_IS5_BASELINE,
+ WIPE_METHOD_HMG_IS5_ENHANCED,
+ WIPE_METHOD_GOST_50739_95,
+ WIPE_METHOD_NAVSO_P5239_26,
+ WIPE_METHOD_ISM_6_2_92,
+ WIPE_METHOD_NAP_14_1_C,
+ WIPE_METHOD_PFITZNER_7,
+ WIPE_METHOD_PFITZNER_33,
  WIPE_METHOD_CUSTOM
 } wipe_method_t;
 
@@ -46,6 +56,16 @@ error_code_t wiperMethodGutmann (device_t *device, uint32_t passes, progress_cal
 error_code_t wiperMethodAfssi5020 (device_t *device, uint32_t passes, progress_callback_t progress);
 error_code_t wiperMethodNistClear (device_t *device, uint32_t passes, progress_callback_t progress);
 error_code_t wiperMethodNistPurge (device_t *device, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodBSI_VSITR (device_t *device, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodRCMP_TSSIT_OPSII (device_t *device, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodHMG_IS5_Baseline (device_t *device, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodHMG_IS5_Enhanced (device_t *device, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodGOST_50739_95 (device_t *device, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodNAVSO_P5239_26 (device_t *device, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodISM_6_2_92 (device_t *device, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodNAP_14_1_C (device_t *device, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodPfitzner7 (device_t *device, uint32_t passes, progress_callback_t progress);
+error_code_t wiperMethodPfitzner33 (device_t *device, uint32_t passes, progress_callback_t progress);
 error_code_t wiperMethodCustom (device_t *device, uint32_t passes, progress_callback_t progress);
 
 error_code_t wiperZeroPartitionTable (device_t *device);

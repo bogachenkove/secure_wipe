@@ -35,9 +35,9 @@ void progressHandler (uint64_t current, uint64_t total, int pass, const char *ph
   for (int barIndex = 0; barIndex < barWidth; barIndex++)
   {
    if (barIndex < filledWidth)
-    printf ("#");
+	printf ("#");
    else
-    printf (" ");
+	printf (" ");
   }
   printf ("] %3d%% - %s", currentPercent, phase);
   fflush (stdout);
@@ -134,7 +134,17 @@ bool interactiveSelectDisk (program_config_t *config)
  printf ("  7. NIST SP-800-88 Clear (1 pass)\n");
  printf ("  8. NIST SP-800-88 Purge (3 passes)\n");
  printf ("  9. Random (custom passes)\n");
- printf ("Enter choice (1-9) [2]: ");
+ printf ("  10. BSI-VSITR (7 passes)\n");
+ printf ("  11. RCMP TSSIT OPS-II (7 passes)\n");
+ printf ("  12. HMG IS5 Baseline (2 passes)\n");
+ printf ("  13. HMG IS5 Enhanced (3 passes)\n");
+ printf ("  14. GOST R 50739-95 (2 passes)\n");
+ printf ("  15. NAVSO P-5239-26 (3 passes)\n");
+ printf ("  16. ISM 6.2.92 (3 passes)\n");
+ printf ("  17. NAP-14.1-C (3 passes)\n");
+ printf ("  18. Pfitzner 7-pass (7x random + verify)\n");
+ printf ("  19. Pfitzner 33-pass (33x random + verify)\n");
+ printf ("Enter choice (1-19) [2]: ");
  fflush (stdout);
  if (!fgets (inputBuffer, sizeof (inputBuffer), stdin))
   inputBuffer[0] = '2';
@@ -189,11 +199,68 @@ bool interactiveSelectDisk (program_config_t *config)
    config->passes = 3;
   }
   break;
+ case 10:
+  config->method = WIPE_METHOD_BSI_VSITR;
+  config->passes = 7;
+  break;
+ case 11:
+  config->method = WIPE_METHOD_RCMP_TSSIT_OPSII;
+  config->passes = 7;
+  break;
+ case 12:
+  config->method = WIPE_METHOD_HMG_IS5_BASELINE;
+  config->passes = 2;
+  break;
+ case 13:
+  config->method = WIPE_METHOD_HMG_IS5_ENHANCED;
+  config->passes = 3;
+  break;
+ case 14:
+  config->method = WIPE_METHOD_GOST_50739_95;
+  config->passes = 2;
+  break;
+ case 15:
+  config->method = WIPE_METHOD_NAVSO_P5239_26;
+  config->passes = 3;
+  break;
+ case 16:
+  config->method = WIPE_METHOD_ISM_6_2_92;
+  config->passes = 3;
+  break;
+ case 17:
+  config->method = WIPE_METHOD_NAP_14_1_C;
+  config->passes = 3;
+  break;
+ case 18:
+  config->method = WIPE_METHOD_PFITZNER_7;
+  config->passes = 7;
+  break;
+ case 19:
+  config->method = WIPE_METHOD_PFITZNER_33;
+  config->passes = 33;
+  break;
  default:
   config->method = WIPE_METHOD_DOD_SHORT;
   config->passes = 3;
   break;
  }
+
+ printf ("\nNumber of full wipe cycles (1-100) [1]: ");
+ fflush (stdout);
+ char cycleBuffer[16];
+ if (fgets (cycleBuffer, sizeof (cycleBuffer), stdin))
+ {
+  int cyclesValue = atoi (cycleBuffer);
+  if (cyclesValue >= 1 && cyclesValue <= 100)
+   config->cycles = (uint32_t) cyclesValue;
+  else
+   config->cycles = 1;
+ }
+ else
+ {
+  config->cycles = 1;
+ }
+
  snprintf (config->devicePath, sizeof (config->devicePath), "%s", selectedDisk->devicePath);
  free (scanResult);
  return true;

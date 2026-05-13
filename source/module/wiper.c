@@ -31,18 +31,18 @@ static void fillBufferWithPattern (uint8_t *buffer, size_t size, pattern_type_t 
   {
    for (size_t offset = 0; offset < size; offset += 3)
    {
-    size_t remaining = size - offset;
-    if (remaining >= 3)
-    {
-     buffer[offset] = patternData[0];
-     buffer[offset + 1] = patternData[1];
-     buffer[offset + 2] = patternData[2];
-    }
-    else
-    {
-     for (size_t byteIndex = 0; byteIndex < remaining; byteIndex++)
-      buffer[offset + byteIndex] = patternData[byteIndex];
-    }
+	size_t remaining = size - offset;
+	if (remaining >= 3)
+	{
+	 buffer[offset] = patternData[0];
+	 buffer[offset + 1] = patternData[1];
+	 buffer[offset + 2] = patternData[2];
+	}
+	else
+	{
+	 for (size_t byteIndex = 0; byteIndex < remaining; byteIndex++)
+	  buffer[offset + byteIndex] = patternData[byteIndex];
+	}
    }
   }
   else if (patternLength == 1)
@@ -56,8 +56,8 @@ static void fillBufferWithPattern (uint8_t *buffer, size_t size, pattern_type_t 
 }
 
 static error_code_t singlePass (device_t *device, pattern_type_t patternType, const uint8_t *patternData, size_t patternLength,
-                                const analysis_result_t *badSectors, progress_callback_t progress, int passNumber, int totalPasses,
-                                const char *description)
+								const analysis_result_t *badSectors, progress_callback_t progress, int passNumber, int totalPasses,
+								const char *description)
 {
  if (!device || !device->isOpen || !gWipeBuffer)
   return ERR_INVALID_ARG;
@@ -83,8 +83,8 @@ static error_code_t singlePass (device_t *device, pattern_type_t patternType, co
   {
    if (randomFill (gWipeBuffer, bufferSize) != ERR_OK)
    {
-    LOG_ERROR ("Random fill failed at sector %llu", (unsigned long long) currentSector);
-    return ERR_RANDOM_GEN;
+	LOG_ERROR ("Random fill failed at sector %llu", (unsigned long long) currentSector);
+	return ERR_RANDOM_GEN;
    }
   }
   else
@@ -101,34 +101,34 @@ static error_code_t singlePass (device_t *device, pattern_type_t patternType, co
 
    for (uint32_t offset = 0; offset < sectorsToWrite; offset++)
    {
-    uint64_t targetSector = currentSector + offset;
-    if (badSectors && analyzerIsBadSector (badSectors, targetSector))
-     continue;
+	uint64_t targetSector = currentSector + offset;
+	if (badSectors && analyzerIsBadSector (badSectors, targetSector))
+	 continue;
 
-    if (patternType == PATTERN_RANDOM)
-     randomFill (gWipeBuffer, device->sectorSize);
-    else
-     fillBufferWithPattern (gWipeBuffer, device->sectorSize, patternType, patternData, patternLength);
+	if (patternType == PATTERN_RANDOM)
+	 randomFill (gWipeBuffer, device->sectorSize);
+	else
+	 fillBufferWithPattern (gWipeBuffer, device->sectorSize, patternType, patternData, patternLength);
 
-    if (ioOps->writeSectors (device, targetSector, 1, gWipeBuffer) != ERR_OK)
-    {
-     writeErrors++;
-     consecutiveErrors++;
-     if (consecutiveErrors <= 10)
-      logBadSector (targetSector, "write");
-     else if (consecutiveErrors == 11)
-      LOG_WARN ("Too many consecutive write errors, further errors will not be logged individually");
-    }
-    else
-    {
-     consecutiveErrors = 0;
-    }
+	if (ioOps->writeSectors (device, targetSector, 1, gWipeBuffer) != ERR_OK)
+	{
+	 writeErrors++;
+	 consecutiveErrors++;
+	 if (consecutiveErrors <= 10)
+	  logBadSector (targetSector, "write");
+	 else if (consecutiveErrors == 11)
+	  LOG_WARN ("Too many consecutive write errors, further errors will not be logged individually");
+	}
+	else
+	{
+	 consecutiveErrors = 0;
+	}
 
-    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS)
-    {
-     LOG_ERROR ("Aborting: %llu consecutive write errors (device may be write-protected)", (unsigned long long) consecutiveErrors);
-     return ERR_WRITE_DEVICE;
-    }
+	if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS)
+	{
+	 LOG_ERROR ("Aborting: %llu consecutive write errors (device may be write-protected)", (unsigned long long) consecutiveErrors);
+	 return ERR_WRITE_DEVICE;
+	}
    }
   }
 
@@ -138,8 +138,8 @@ static error_code_t singlePass (device_t *device, pattern_type_t patternType, co
    int currentPercent = (int) ((currentSector * 100) / device->sectorCount);
    if (currentPercent != lastPercent)
    {
-    progress (currentSector, device->sectorCount, passNumber, descriptionBuffer);
-    lastPercent = currentPercent;
+	progress (currentSector, device->sectorCount, passNumber, descriptionBuffer);
+	lastPercent = currentPercent;
    }
   }
  }
@@ -196,6 +196,26 @@ const char *wiperMethodName (wipe_method_t method)
   return "NIST SP-800-88 Clear (1-pass)";
  case WIPE_METHOD_NIST_PURGE:
   return "NIST SP-800-88 Purge (3-pass)";
+ case WIPE_METHOD_BSI_VSITR:
+  return "BSI-VSITR (7-pass)";
+ case WIPE_METHOD_RCMP_TSSIT_OPSII:
+  return "RCMP TSSIT OPS-II (7-pass)";
+ case WIPE_METHOD_HMG_IS5_BASELINE:
+  return "HMG IS5 Baseline (2-pass)";
+ case WIPE_METHOD_HMG_IS5_ENHANCED:
+  return "HMG IS5 Enhanced (3-pass)";
+ case WIPE_METHOD_GOST_50739_95:
+  return "GOST R 50739-95 (2-pass)";
+ case WIPE_METHOD_NAVSO_P5239_26:
+  return "NAVSO P-5239-26 (3-pass)";
+ case WIPE_METHOD_ISM_6_2_92:
+  return "ISM 6.2.92 (3-pass)";
+ case WIPE_METHOD_NAP_14_1_C:
+  return "NAP-14.1-C (3-pass)";
+ case WIPE_METHOD_PFITZNER_7:
+  return "Pfitzner 7-pass (7x random + verify)";
+ case WIPE_METHOD_PFITZNER_33:
+  return "Pfitzner 33-pass (33x random + verify)";
  case WIPE_METHOD_CUSTOM:
   return "Custom";
  default:
@@ -225,6 +245,26 @@ int wiperMethodPasses (wipe_method_t method)
   return 1;
  case WIPE_METHOD_NIST_PURGE:
   return 3;
+ case WIPE_METHOD_BSI_VSITR:
+  return 7;
+ case WIPE_METHOD_RCMP_TSSIT_OPSII:
+  return 7;
+ case WIPE_METHOD_HMG_IS5_BASELINE:
+  return 2;
+ case WIPE_METHOD_HMG_IS5_ENHANCED:
+  return 3;
+ case WIPE_METHOD_GOST_50739_95:
+  return 2;
+ case WIPE_METHOD_NAVSO_P5239_26:
+  return 3;
+ case WIPE_METHOD_ISM_6_2_92:
+  return 3;
+ case WIPE_METHOD_NAP_14_1_C:
+  return 3;
+ case WIPE_METHOD_PFITZNER_7:
+  return 7;
+ case WIPE_METHOD_PFITZNER_33:
+  return 33;
  default:
   return 0;
  }
@@ -277,6 +317,36 @@ error_code_t wiperExecute (device_t *device, const wipe_config_t *config, wipe_s
   break;
  case WIPE_METHOD_NIST_PURGE:
   methodFunction = wiperMethodNistPurge;
+  break;
+ case WIPE_METHOD_BSI_VSITR:
+  methodFunction = wiperMethodBSI_VSITR;
+  break;
+ case WIPE_METHOD_RCMP_TSSIT_OPSII:
+  methodFunction = wiperMethodRCMP_TSSIT_OPSII;
+  break;
+ case WIPE_METHOD_HMG_IS5_BASELINE:
+  methodFunction = wiperMethodHMG_IS5_Baseline;
+  break;
+ case WIPE_METHOD_HMG_IS5_ENHANCED:
+  methodFunction = wiperMethodHMG_IS5_Enhanced;
+  break;
+ case WIPE_METHOD_GOST_50739_95:
+  methodFunction = wiperMethodGOST_50739_95;
+  break;
+ case WIPE_METHOD_NAVSO_P5239_26:
+  methodFunction = wiperMethodNAVSO_P5239_26;
+  break;
+ case WIPE_METHOD_ISM_6_2_92:
+  methodFunction = wiperMethodISM_6_2_92;
+  break;
+ case WIPE_METHOD_NAP_14_1_C:
+  methodFunction = wiperMethodNAP_14_1_C;
+  break;
+ case WIPE_METHOD_PFITZNER_7:
+  methodFunction = wiperMethodPfitzner7;
+  break;
+ case WIPE_METHOD_PFITZNER_33:
+  methodFunction = wiperMethodPfitzner33;
   break;
  case WIPE_METHOD_CUSTOM:
   methodFunction = wiperMethodCustom;
@@ -420,49 +490,49 @@ error_code_t wiperMethodGutmann (device_t *device, uint32_t passes, progress_cal
 {
  (void) passes;
  static const uint8_t gutmannPatterns[35][3] = {
-     {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x55, 0x55, 0x55}, {0xAA, 0xAA, 0xAA}, {0x92, 0x49, 0x24},
-     {0x49, 0x24, 0x92}, {0x24, 0x92, 0x49}, {0x00, 0x00, 0x00}, {0x11, 0x11, 0x11}, {0x22, 0x22, 0x22}, {0x33, 0x33, 0x33}, {0x44, 0x44, 0x44},
-     {0x55, 0x55, 0x55}, {0x66, 0x66, 0x66}, {0x77, 0x77, 0x77}, {0x88, 0x88, 0x88}, {0x99, 0x99, 0x99}, {0xAA, 0xAA, 0xAA}, {0xBB, 0xBB, 0xBB},
-     {0xCC, 0xCC, 0xCC}, {0xDD, 0xDD, 0xDD}, {0xEE, 0xEE, 0xEE}, {0xFF, 0xFF, 0xFF}, {0x92, 0x49, 0x24}, {0x49, 0x24, 0x92}, {0x24, 0x92, 0x49},
-     {0x6D, 0xB6, 0xDB}, {0xB6, 0xDB, 0x6D}, {0xDB, 0x6D, 0xB6}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}};
+	 {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x55, 0x55, 0x55}, {0xAA, 0xAA, 0xAA}, {0x92, 0x49, 0x24},
+	 {0x49, 0x24, 0x92}, {0x24, 0x92, 0x49}, {0x00, 0x00, 0x00}, {0x11, 0x11, 0x11}, {0x22, 0x22, 0x22}, {0x33, 0x33, 0x33}, {0x44, 0x44, 0x44},
+	 {0x55, 0x55, 0x55}, {0x66, 0x66, 0x66}, {0x77, 0x77, 0x77}, {0x88, 0x88, 0x88}, {0x99, 0x99, 0x99}, {0xAA, 0xAA, 0xAA}, {0xBB, 0xBB, 0xBB},
+	 {0xCC, 0xCC, 0xCC}, {0xDD, 0xDD, 0xDD}, {0xEE, 0xEE, 0xEE}, {0xFF, 0xFF, 0xFF}, {0x92, 0x49, 0x24}, {0x49, 0x24, 0x92}, {0x24, 0x92, 0x49},
+	 {0x6D, 0xB6, 0xDB}, {0xB6, 0xDB, 0x6D}, {0xDB, 0x6D, 0xB6}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}};
  static const bool isRandom[35] = {true,  true,  true,  true,  false, false, false, false, false, false, false, false,
-                                   false, false, false, false, false, false, false, false, false, false, false, false,
-                                   false, false, false, false, false, false, false, true,  true,  true,  true};
+								   false, false, false, false, false, false, false, false, false, false, false, false,
+								   false, false, false, false, false, false, false, true,  true,  true,  true};
  static const char *descriptions[35] = {"Random 1/4",
-                                        "Random 2/4",
-                                        "Random 3/4",
-                                        "Random 4/4",
-                                        "0x55",
-                                        "0xAA",
-                                        "0x924924",
-                                        "0x492492",
-                                        "0x249249",
-                                        "0x00",
-                                        "0x11",
-                                        "0x22",
-                                        "0x33",
-                                        "0x44",
-                                        "0x55",
-                                        "0x66",
-                                        "0x77",
-                                        "0x88",
-                                        "0x99",
-                                        "0xAA",
-                                        "0xBB",
-                                        "0xCC",
-                                        "0xDD",
-                                        "0xEE",
-                                        "0xFF",
-                                        "0x924924",
-                                        "0x492492",
-                                        "0x249249",
-                                        "0x6DB6DB",
-                                        "0xB6DB6D",
-                                        "0xDB6DB6",
-                                        "Random final 1/4",
-                                        "Random final 2/4",
-                                        "Random final 3/4",
-                                        "Random final 4/4"};
+										"Random 2/4",
+										"Random 3/4",
+										"Random 4/4",
+										"0x55",
+										"0xAA",
+										"0x924924",
+										"0x492492",
+										"0x249249",
+										"0x00",
+										"0x11",
+										"0x22",
+										"0x33",
+										"0x44",
+										"0x55",
+										"0x66",
+										"0x77",
+										"0x88",
+										"0x99",
+										"0xAA",
+										"0xBB",
+										"0xCC",
+										"0xDD",
+										"0xEE",
+										"0xFF",
+										"0x924924",
+										"0x492492",
+										"0x249249",
+										"0x6DB6DB",
+										"0xB6DB6D",
+										"0xDB6DB6",
+										"Random final 1/4",
+										"Random final 2/4",
+										"Random final 3/4",
+										"Random final 4/4"};
  error_code_t errorCode;
  for (int patternIndex = 0; patternIndex < 35; patternIndex++)
  {
@@ -510,6 +580,194 @@ error_code_t wiperMethodNistPurge (device_t *device, uint32_t passes, progress_c
  if (errorCode != ERR_OK)
   return errorCode;
  return singlePass (device, PATTERN_RANDOM, NULL, 0, NULL, progress, 3, totalPasses, "NIST Purge: Random #2 (verification)");
+}
+
+error_code_t wiperMethodBSI_VSITR (device_t *device, uint32_t passes, progress_callback_t progress)
+{
+ (void) passes;
+ uint8_t zeroByte = 0x00;
+ uint8_t oneByte = 0xFF;
+ error_code_t errorCode;
+ const int totalPasses = 7;
+
+ errorCode = singlePass (device, PATTERN_ZERO, &zeroByte, 1, NULL, progress, 1, totalPasses, "BSI-VSITR: Zero fill #1");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ errorCode = singlePass (device, PATTERN_ONE, &oneByte, 1, NULL, progress, 2, totalPasses, "BSI-VSITR: One fill #1");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ errorCode = singlePass (device, PATTERN_ZERO, &zeroByte, 1, NULL, progress, 3, totalPasses, "BSI-VSITR: Zero fill #2");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ errorCode = singlePass (device, PATTERN_ONE, &oneByte, 1, NULL, progress, 4, totalPasses, "BSI-VSITR: One fill #2");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ errorCode = singlePass (device, PATTERN_ZERO, &zeroByte, 1, NULL, progress, 5, totalPasses, "BSI-VSITR: Zero fill #3");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ errorCode = singlePass (device, PATTERN_ONE, &oneByte, 1, NULL, progress, 6, totalPasses, "BSI-VSITR: One fill #3");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ return singlePass (device, PATTERN_RANDOM, NULL, 0, NULL, progress, 7, totalPasses, "BSI-VSITR: Random data");
+}
+
+error_code_t wiperMethodRCMP_TSSIT_OPSII (device_t *device, uint32_t passes, progress_callback_t progress)
+{
+ (void) passes;
+ uint8_t zeroByte = 0x00;
+ uint8_t oneByte = 0xFF;
+ error_code_t errorCode;
+ const int totalPasses = 7;
+
+ errorCode = singlePass (device, PATTERN_ZERO, &zeroByte, 1, NULL, progress, 1, totalPasses, "RCMP TSSIT OPS-II: Zero fill #1");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ errorCode = singlePass (device, PATTERN_ONE, &oneByte, 1, NULL, progress, 2, totalPasses, "RCMP TSSIT OPS-II: One fill #1");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ errorCode = singlePass (device, PATTERN_ZERO, &zeroByte, 1, NULL, progress, 3, totalPasses, "RCMP TSSIT OPS-II: Zero fill #2");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ errorCode = singlePass (device, PATTERN_ONE, &oneByte, 1, NULL, progress, 4, totalPasses, "RCMP TSSIT OPS-II: One fill #2");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ errorCode = singlePass (device, PATTERN_ZERO, &zeroByte, 1, NULL, progress, 5, totalPasses, "RCMP TSSIT OPS-II: Zero fill #3");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ errorCode = singlePass (device, PATTERN_ONE, &oneByte, 1, NULL, progress, 6, totalPasses, "RCMP TSSIT OPS-II: One fill #3");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ return singlePass (device, PATTERN_RANDOM, NULL, 0, NULL, progress, 7, totalPasses, "RCMP TSSIT OPS-II: Random data");
+}
+
+error_code_t wiperMethodHMG_IS5_Baseline (device_t *device, uint32_t passes, progress_callback_t progress)
+{
+ (void) passes;
+ uint8_t zeroByte = 0x00;
+ error_code_t errorCode;
+ const int totalPasses = 2;
+
+ errorCode = singlePass (device, PATTERN_ZERO, &zeroByte, 1, NULL, progress, 1, totalPasses, "HMG IS5 Baseline: Zero fill");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ return singlePass (device, PATTERN_RANDOM, NULL, 0, NULL, progress, 2, totalPasses, "HMG IS5 Baseline: Random data");
+}
+
+error_code_t wiperMethodHMG_IS5_Enhanced (device_t *device, uint32_t passes, progress_callback_t progress)
+{
+ (void) passes;
+ uint8_t zeroByte = 0x00;
+ uint8_t oneByte = 0xFF;
+ error_code_t errorCode;
+ const int totalPasses = 3;
+
+ errorCode = singlePass (device, PATTERN_ZERO, &zeroByte, 1, NULL, progress, 1, totalPasses, "HMG IS5 Enhanced: Zero fill");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ errorCode = singlePass (device, PATTERN_ONE, &oneByte, 1, NULL, progress, 2, totalPasses, "HMG IS5 Enhanced: One fill");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ return singlePass (device, PATTERN_RANDOM, NULL, 0, NULL, progress, 3, totalPasses, "HMG IS5 Enhanced: Random data");
+}
+
+error_code_t wiperMethodGOST_50739_95 (device_t *device, uint32_t passes, progress_callback_t progress)
+{
+ (void) passes;
+ uint8_t zeroByte = 0x00;
+ error_code_t errorCode;
+ const int totalPasses = 2;
+
+ errorCode = singlePass (device, PATTERN_ZERO, &zeroByte, 1, NULL, progress, 1, totalPasses, "GOST R 50739-95: Zero fill");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ return singlePass (device, PATTERN_RANDOM, NULL, 0, NULL, progress, 2, totalPasses, "GOST R 50739-95: Random data");
+}
+
+error_code_t wiperMethodNAVSO_P5239_26 (device_t *device, uint32_t passes, progress_callback_t progress)
+{
+ (void) passes;
+ uint8_t zeroByte = 0x00;
+ uint8_t oneByte = 0xFF;
+ error_code_t errorCode;
+ const int totalPasses = 3;
+
+ errorCode = singlePass (device, PATTERN_ZERO, &zeroByte, 1, NULL, progress, 1, totalPasses, "NAVSO P-5239-26: Zero fill");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ errorCode = singlePass (device, PATTERN_ONE, &oneByte, 1, NULL, progress, 2, totalPasses, "NAVSO P-5239-26: One fill");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ return singlePass (device, PATTERN_RANDOM, NULL, 0, NULL, progress, 3, totalPasses, "NAVSO P-5239-26: Random data");
+}
+
+error_code_t wiperMethodISM_6_2_92 (device_t *device, uint32_t passes, progress_callback_t progress)
+{
+ (void) passes;
+ uint8_t zeroByte = 0x00;
+ uint8_t oneByte = 0xFF;
+ error_code_t errorCode;
+ const int totalPasses = 3;
+
+ errorCode = singlePass (device, PATTERN_ZERO, &zeroByte, 1, NULL, progress, 1, totalPasses, "ISM 6.2.92: Zero fill");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ errorCode = singlePass (device, PATTERN_ONE, &oneByte, 1, NULL, progress, 2, totalPasses, "ISM 6.2.92: One fill");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ return singlePass (device, PATTERN_RANDOM, NULL, 0, NULL, progress, 3, totalPasses, "ISM 6.2.92: Random data");
+}
+
+error_code_t wiperMethodNAP_14_1_C (device_t *device, uint32_t passes, progress_callback_t progress)
+{
+ (void) passes;
+ uint8_t zeroByte = 0x00;
+ uint8_t oneByte = 0xFF;
+ error_code_t errorCode;
+ const int totalPasses = 3;
+
+ errorCode = singlePass (device, PATTERN_ZERO, &zeroByte, 1, NULL, progress, 1, totalPasses, "NAP-14.1-C: Zero fill #1");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ errorCode = singlePass (device, PATTERN_ONE, &oneByte, 1, NULL, progress, 2, totalPasses, "NAP-14.1-C: One fill");
+ if (errorCode != ERR_OK)
+  return errorCode;
+ return singlePass (device, PATTERN_ZERO, &zeroByte, 1, NULL, progress, 3, totalPasses, "NAP-14.1-C: Zero fill #2");
+}
+
+static error_code_t pfitznerMultiPass (device_t *device, int totalPasses, progress_callback_t progress, const char *methodName)
+{
+ error_code_t errorCode;
+
+ for (int pass = 1; pass <= totalPasses; pass++)
+ {
+  char description[128];
+  snprintf (description, sizeof (description), "%s: Random pass %d/%d", methodName, pass, totalPasses);
+
+  errorCode = singlePass (device, PATTERN_RANDOM, NULL, 0, NULL, progress, pass, totalPasses, description);
+  if (errorCode != ERR_OK)
+   return errorCode;
+
+  LOG_INFO ("%s: Verification after pass %d", methodName, pass);
+  uint64_t verifyErrors = analyzerVerifyWipe (device, progress);
+  if (verifyErrors != 0)
+  {
+   LOG_ERROR ("%s: Verification failed after pass %d (%llu errors)", methodName, pass, (unsigned long long) verifyErrors);
+   return ERR_READ_DEVICE;
+  }
+ }
+ return ERR_OK;
+}
+
+error_code_t wiperMethodPfitzner7 (device_t *device, uint32_t passes, progress_callback_t progress)
+{
+ (void) passes;
+ return pfitznerMultiPass (device, 7, progress, "Pfitzner 7-pass");
+}
+
+error_code_t wiperMethodPfitzner33 (device_t *device, uint32_t passes, progress_callback_t progress)
+{
+ (void) passes;
+ return pfitznerMultiPass (device, 33, progress, "Pfitzner 33-pass");
 }
 
 error_code_t wiperMethodCustom (device_t *device, uint32_t passes, progress_callback_t progress)
@@ -597,7 +855,7 @@ error_code_t wiperZeroPartitionTable (device_t *device)
  {
   uint64_t backupStart = device->sectorCount - 33;
   LOG_INFO ("Overwriting backup GPT (sectors %llu-%llu) with zeros", (unsigned long long) backupStart,
-            (unsigned long long) (device->sectorCount - 1));
+			(unsigned long long) (device->sectorCount - 1));
   overwriteSectorRange (device, backupStart, 33, 0x00);
  }
  deviceIoGetOps ()->flush (device);
@@ -606,7 +864,7 @@ error_code_t wiperZeroPartitionTable (device_t *device)
 }
 
 static void overwriteMetadataRange (device_t *device, uint64_t startSector, uint64_t endSector, int passIndex, progress_callback_t progress,
-                                    const char *phasePrefix)
+									const char *phasePrefix)
 {
  const device_io_ops_t *ioOps = deviceIoGetOps ();
  uint8_t *buffer = (uint8_t *) alignedAlloc (gBufferSize);
@@ -623,8 +881,8 @@ static void overwriteMetadataRange (device_t *device, uint64_t startSector, uint
   {
    for (uint32_t offset = 0; offset < sectorsToWrite; offset++)
    {
-    randomFill (buffer, SECTOR_SIZE);
-    ioOps->writeSectors (device, currentSector + offset, 1, buffer);
+	randomFill (buffer, SECTOR_SIZE);
+	ioOps->writeSectors (device, currentSector + offset, 1, buffer);
    }
   }
   currentSector += sectorsToWrite;
@@ -696,7 +954,7 @@ bool wiperTryRemoveWriteProtection (device_t *device)
  }
  CloseHandle (device->handle);
  device->handle =
-     CreateFileA (device->path, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
+	 CreateFileA (device->path, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
  if (device->handle != INVALID_HANDLE_VALUE)
  {
   LOG_INFO ("Device reopened with exclusive access");

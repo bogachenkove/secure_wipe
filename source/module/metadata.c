@@ -7,7 +7,7 @@
 #include <ctype.h>
 
 #define SECURE_WIPE_NAME "Secure Wipe"
-#define SECURE_WIPE_VERSION "2.0.4.1"
+#define SECURE_WIPE_VERSION "2.0.5.0"
 #define SECURE_WIPE_DESCRIPTION "Data Destruction Tool"
 #define SECURE_WIPE_AUTHOR "Bogachenko Vyacheslav"
 #define SECURE_WIPE_CONTACT "bogachenkove@outlook.com"
@@ -52,6 +52,16 @@ void printMethods (void)
  printf ("  AFSSI-5020  : U.S. Air Force AFSSI-5020 (3 passes: 0x00, 0xFF, random)\n");
  printf ("  NIST Clear  : NIST SP-800-88 Rev. 1 Clear (1 pass of zeros)\n");
  printf ("  NIST Purge  : NIST SP-800-88 Rev. 1 Purge (3 passes: random, 0x00, random)\n");
+ printf ("  BSI-VSITR   : German BSI standard (7 passes: 0x00,0xFF,0x00,0xFF,0x00,0xFF,random)\n");
+ printf ("  RCMP TSSIT  : Canadian RCMP TSSIT OPS-II (7 passes)\n");
+ printf ("  HMG IS5 Base: HMG Infosec Standard 5 Baseline (1 pass: zeros, then random)\n");
+ printf ("  HMG IS5 Enh : HMG Infosec Standard 5 Enhanced (3 passes: 0x00, 0xFF, random)\n");
+ printf ("  GOST 50739-95: Russian State Standard (2 passes: zeros, then random)\n");
+ printf ("  NAVSO P-5239-26: US Navy standard (3 passes: 0x00, 0xFF, random)\n");
+ printf ("  ISM 6.2.92   : Australian Government ISM (3 passes: 0x00, 0xFF, random)\n");
+ printf ("  NAP-14.1-C   : Spanish standard (3 passes: 0x00, 0xFF, 0x00)\n");
+ printf ("  Pfitzner 7   : Pfitzner Method (7 passes of random data + verify each)\n");
+ printf ("  Pfitzner 33  : Pfitzner Method (33 passes of random data + verify each)\n");
  printf ("\nNotes:\n");
  printf ("  - NIST Clear is suitable for media reuse within organization\n");
  printf ("  - NIST Purge provides stronger sanitization for external release\n");
@@ -84,6 +94,16 @@ void printUsage (const char *programName)
  printf ("  --afssi               AFSSI-5020 (3 passes)\n");
  printf ("  --nist-clear          NIST SP-800-88 Clear (1 pass)\n");
  printf ("  --nist-purge          NIST SP-800-88 Purge (3 passes)\n");
+ printf ("  --bsi-vsitr           BSI-VSITR (7 passes)\n");
+ printf ("  --rcmp-tssit          RCMP TSSIT OPS-II (7 passes)\n");
+ printf ("  --hmg-is5-baseline    HMG IS5 Baseline (2 passes)\n");
+ printf ("  --hmg-is5-enhanced    HMG IS5 Enhanced (3 passes)\n");
+ printf ("  --gost-50739-95       GOST R 50739-95 (2 passes)\n");
+ printf ("  --navso-p5239-26      NAVSO P-5239-26 (3 passes)\n");
+ printf ("  --ism-6.2.92          ISM 6.2.92 (3 passes)\n");
+ printf ("  --nap-14.1-c          NAP-14.1-C (3 passes)\n");
+ printf ("  --pfitzner-7          Pfitzner 7-pass (7x random + verify)\n");
+ printf ("  --pfitzner-33         Pfitzner 33-pass (33x random + verify)\n");
  printf ("\nAnalysis Options:\n");
  printf ("  --analyze             Read-only analysis (no wiping)\n");
  printf ("  --skip-analysis       Skip analysis and proceed directly to wipe\n");
@@ -100,6 +120,7 @@ void printUsage (const char *programName)
  printf ("  -y, --yes             Auto-confirm (dangerous)\n");
  printf ("  -q, --quiet           Quiet mode\n");
  printf ("  --methods             List wipe methods with descriptions\n");
+ printf ("  --cycle N             Repeat full wipe cycle N times (default 1, max 100)\n");
  printf ("\nEmergency Mode (write zeros to first N sectors or N blocks):\n");
  printf ("  --emergency           Enable emergency zero-write mode (requires --buffer and either --sector or --block)\n");
  printf ("  --sector N            Number of sectors to overwrite (must be >0)\n");
@@ -213,7 +234,7 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
   {
    config->selectDisk = true;
   }
-  else if (strcmp (argv[argIndex], "-A") == 0 || strcmp(argv[argIndex], "--show-system-storage") == 0)
+  else if (strcmp (argv[argIndex], "-A") == 0 || strcmp (argv[argIndex], "--show-system-storage") == 0)
   {
    config->showAllDisks = true;
   }
@@ -227,18 +248,18 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
    config->method = WIPE_METHOD_RANDOM;
    if (argIndex + 1 < argc && argv[argIndex + 1][0] != '-')
    {
-    int nextArg = ++argIndex;
-    config->passes = (uint32_t) atoi (argv[nextArg]);
-    if (config->passes < 1 || config->passes > 100)
-    {
-     fprintf (stderr, "ERROR: --random requires a number between 1 and 100. See --help.\n");
-     return false;
-    }
+	int nextArg = ++argIndex;
+	config->passes = (uint32_t) atoi (argv[nextArg]);
+	if (config->passes < 1 || config->passes > 100)
+	{
+	 fprintf (stderr, "ERROR: --random requires a number between 1 and 100. See --help.\n");
+	 return false;
+	}
    }
    else
    {
-    fprintf (stderr, "ERROR: --random requires a number of passes (e.g., --random 3). See --help.\n");
-    return false;
+	fprintf (stderr, "ERROR: --random requires a number of passes (e.g., --random 3). See --help.\n");
+	return false;
    }
   }
   else if (strcmp (argv[argIndex], "--dod-short") == 0)
@@ -276,23 +297,73 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
    config->method = WIPE_METHOD_NIST_PURGE;
    config->passes = 3;
   }
+  else if (strcmp (argv[argIndex], "--bsi-vsitr") == 0)
+  {
+   config->method = WIPE_METHOD_BSI_VSITR;
+   config->passes = 7;
+  }
+  else if (strcmp (argv[argIndex], "--rcmp-tssit") == 0)
+  {
+   config->method = WIPE_METHOD_RCMP_TSSIT_OPSII;
+   config->passes = 7;
+  }
+  else if (strcmp (argv[argIndex], "--hmg-is5-baseline") == 0)
+  {
+   config->method = WIPE_METHOD_HMG_IS5_BASELINE;
+   config->passes = 2;
+  }
+  else if (strcmp (argv[argIndex], "--hmg-is5-enhanced") == 0)
+  {
+   config->method = WIPE_METHOD_HMG_IS5_ENHANCED;
+   config->passes = 3;
+  }
+  else if (strcmp (argv[argIndex], "--gost-50739-95") == 0)
+  {
+   config->method = WIPE_METHOD_GOST_50739_95;
+   config->passes = 2;
+  }
+  else if (strcmp (argv[argIndex], "--navso-p5239-26") == 0)
+  {
+   config->method = WIPE_METHOD_NAVSO_P5239_26;
+   config->passes = 3;
+  }
+  else if (strcmp (argv[argIndex], "--ism-6.2.92") == 0)
+  {
+   config->method = WIPE_METHOD_ISM_6_2_92;
+   config->passes = 3;
+  }
+  else if (strcmp (argv[argIndex], "--nap-14.1-c") == 0)
+  {
+   config->method = WIPE_METHOD_NAP_14_1_C;
+   config->passes = 3;
+  }
+  else if (strcmp (argv[argIndex], "--pfitzner-7") == 0)
+  {
+   config->method = WIPE_METHOD_PFITZNER_7;
+   config->passes = 7;
+  }
+  else if (strcmp (argv[argIndex], "--pfitzner-33") == 0)
+  {
+   config->method = WIPE_METHOD_PFITZNER_33;
+   config->passes = 33;
+  }
   else if (strcmp (argv[argIndex], "-b") == 0 || strcmp (argv[argIndex], "--buffer") == 0)
   {
    if (argIndex + 1 < argc)
    {
-    size_t newSize = parseSizeWithUnit (argv[++argIndex]);
-    if (newSize == 0 || bufferSetSize (newSize) != 0)
-    {
-     fprintf (stderr, "ERROR: Invalid buffer size. Use format like 1MB, 512KB. See --help.\n");
-     return false;
-    }
-    config->bufferSize = newSize;
-    config->bufferGiven = true;
+	size_t newSize = parseSizeWithUnit (argv[++argIndex]);
+	if (newSize == 0 || bufferSetSize (newSize) != 0)
+	{
+	 fprintf (stderr, "ERROR: Invalid buffer size. Use format like 1MB, 512KB. See --help.\n");
+	 return false;
+	}
+	config->bufferSize = newSize;
+	config->bufferGiven = true;
    }
    else
    {
-    fprintf (stderr, "ERROR: --buffer requires a size argument (e.g., --buffer 1M). See --help.\n");
-    return false;
+	fprintf (stderr, "ERROR: --buffer requires a size argument (e.g., --buffer 1M). See --help.\n");
+	return false;
    }
   }
   else if (strcmp (argv[argIndex], "--analyze") == 0)
@@ -322,12 +393,12 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
   {
    if (argIndex + 1 < argc && argv[argIndex + 1][0] != '-')
    {
-    snprintf (gLogFilePath, sizeof (gLogFilePath), "%s", argv[++argIndex]);
+	snprintf (gLogFilePath, sizeof (gLogFilePath), "%s", argv[++argIndex]);
    }
    else
    {
-    fprintf (stderr, "ERROR: --log requires a file path. See --help.\n");
-    return false;
+	fprintf (stderr, "ERROR: --log requires a file path. See --help.\n");
+	return false;
    }
   }
   else if (strcmp (argv[argIndex], "--no-log") == 0)
@@ -351,39 +422,56 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
   {
    config->verbose = false;
   }
+  else if (strcmp (argv[argIndex], "--cycle") == 0)
+  {
+   if (argIndex + 1 < argc)
+   {
+	config->cycles = (uint32_t) atoi (argv[++argIndex]);
+	if (config->cycles < 1 || config->cycles > 100)
+	{
+	 fprintf (stderr, "ERROR: --cycle requires a number between 1 and 100. See --help.\n");
+	 return false;
+	}
+   }
+   else
+   {
+	fprintf (stderr, "ERROR: --cycle requires a number. See --help.\n");
+	return false;
+   }
+  }
   else if (strcmp (argv[argIndex], "--sector") == 0)
   {
    if (argIndex + 1 < argc)
    {
-    config->emergencySectors = strtoull (argv[++argIndex], NULL, 10);
-    if (config->emergencySectors == 0)
-    {
-     fprintf (stderr, "ERROR: --sector must be a positive number. See --help.\n");
-     return false;
-    }
+	config->emergencySectors = strtoull (argv[++argIndex], NULL, 10);
+	if (config->emergencySectors == 0)
+	{
+	 fprintf (stderr, "ERROR: --sector must be a positive number. See --help.\n");
+	 return false;
+	}
    }
    else
    {
-    fprintf (stderr, "ERROR: --sector requires a number. See --help.\n");
-    return false;
+	fprintf (stderr, "ERROR: --sector requires a number. See --help.\n");
+	return false;
    }
   }
   else if (strcmp (argv[argIndex], "--block") == 0)
   {
    if (argIndex + 1 < argc)
    {
-    config->blockCount = strtoull (argv[++argIndex], NULL, 10);
-    if (config->blockCount == 0)
-    {
-     fprintf (stderr, "ERROR: --block must be a positive number. See --help.\n");
-     return false;
-    }
-    config->blockGiven = true;
+	config->blockCount = strtoull (argv[++argIndex], NULL, 10);
+	if (config->blockCount == 0)
+	{
+	 fprintf (stderr, "ERROR: --block must be a positive number. See --help.\n");
+	 return false;
+	}
+	config->blockGiven = true;
    }
    else
    {
-    fprintf (stderr, "ERROR: --block requires a number. See --help.\n");
-    return false;
+	fprintf (stderr, "ERROR: --block requires a number. See --help.\n");
+	return false;
    }
   }
   else if (strcmp (argv[argIndex], "--emergency") == 0)
@@ -426,8 +514,8 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
    size_t bytesPerBlock = config->bufferSize;
    if (bytesPerBlock % SECTOR_SIZE != 0)
    {
-    fprintf (stderr, "ERROR: buffer size (%zu) must be multiple of sector size (%d). See --help.\n", bytesPerBlock, SECTOR_SIZE);
-    return false;
+	fprintf (stderr, "ERROR: buffer size (%zu) must be multiple of sector size (%d). See --help.\n", bytesPerBlock, SECTOR_SIZE);
+	return false;
    }
    uint64_t sectorsPerBlock = bytesPerBlock / SECTOR_SIZE;
    config->emergencySectors = config->blockCount * sectorsPerBlock;
@@ -436,7 +524,13 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
   if (config->listDisks || config->selectDisk || config->analyzeOnly || config->destroyPartitionTable || config->quickWpCheck || config->skipAnalysis)
   {
    fprintf (stderr, "ERROR: --emergency is incompatible with other operation flags (--list, --select, --analyze, --destroy-partition-table, "
-                    "--wp-check, --skip-analysis). See --help.\n");
+					"--wp-check, --skip-analysis). See --help.\n");
+   return false;
+  }
+
+  if (config->cycles > 1)
+  {
+   fprintf (stderr, "ERROR: --cycle cannot be used with --emergency. See --help.\n");
    return false;
   }
 
