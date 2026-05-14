@@ -1,4 +1,4 @@
-Secure Wipe v2.0.6.0
+Secure Wipe v2.0.8.0
 Data Destruction Tool
 
 DESCRIPTION
@@ -80,7 +80,8 @@ OPTIONS
     --emergency                      Enable emergency zero‑write mode
     --sector N                       Number of sectors to overwrite (must be >0)
     --block N                        Number of blocks to overwrite (block size = --buffer)
-    (Requires --buffer, and either --sector or --block)
+    -b, --buffer SIZE                I/O buffer size (optional, default = 512KB)
+    (If neither --sector nor --block is given, the entire device is zeroed)
 
   Logging:
     --log FILE                       Write log to specified file (default: timestamped file in TEMP)
@@ -107,7 +108,9 @@ EXAMPLES
   securewipe --destroy-partition-table \\.\PhysicalDrive0   # wipe MBR/GPT only
   securewipe --log ./custom.log /dev/sdb       # write log to custom file
   securewipe --no-log /dev/sdb                 # disable logging
-  securewipe --emergency --buffer 1M --sector 1000 /dev/sdc   # emergency zero‑write first 1000 sectors
+  securewipe --emergency --sector 1000 /dev/sdc   # emergency zero‑write first 1000 sectors (default buffer)
+  securewipe --emergency --buffer 1M --block 10 /dev/sdc   # zero 10 blocks of 1MB each
+  securewipe --emergency /dev/sdc              # zero entire device (full disk)
   securewipe --methods                         # show all wipe methods
 
 NOTES
@@ -119,8 +122,11 @@ NOTES
   - On Linux use /dev/sdX, /dev/nvmeXnY, etc.
   - Verification reads entire device after wipe to check for errors.
   - Emergency mode is intended for quick partial overwrite (e.g., wiping partition table or boot area).
+    Without --sector/--block it erases the whole disk. Buffer size is optional (default 512KB).
   - Pfitzner methods verify after each pass, significantly increasing operation time.
   - Use --cycle to repeat the entire wipe process (analysis + wipe + verification) multiple times.
+  - The program now includes additional safety checks: overflow protection, strict argument validation,
+    and a second mount check just before writing to prevent filesystem corruption.
 
 LICENSE
   MIT License – see docs/LICENSE.txt
