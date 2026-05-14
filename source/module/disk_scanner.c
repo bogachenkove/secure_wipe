@@ -146,24 +146,47 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
    break;
   }
  }
-
- char systemDrive[4] = "C:";
- GetEnvironmentVariableA ("SystemDrive", systemDrive, sizeof (systemDrive));
- char volumePath[64];
- snprintf (volumePath, sizeof (volumePath), "\\\\.\\%s", systemDrive);
- HANDLE volumeHandle = CreateFileA (volumePath, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
- if (volumeHandle != INVALID_HANDLE_VALUE)
+ char systemPath[MAX_PATH];
+ if (GetSystemDirectoryA (systemPath, sizeof (systemPath)))
  {
-  VOLUME_DISK_EXTENTS extents;
-  if (DeviceIoControl (volumeHandle, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, &extents, sizeof (extents), &bytesReturned, NULL))
+  char systemDrive[4] = {systemPath[0], ':', '\\', '\0'};
+  char volumePath[64];
+  snprintf (volumePath, sizeof (volumePath), "\\\\.\\%s", systemDrive);
+  HANDLE volumeHandle = CreateFileA (volumePath, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+  if (volumeHandle != INVALID_HANDLE_VALUE)
   {
-   if (extents.NumberOfDiskExtents > 0 && (int) extents.Extents[0].DiskNumber == diskNumber)
+   VOLUME_DISK_EXTENTS extents;
+   if (DeviceIoControl (volumeHandle, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, &extents, sizeof (extents), &bytesReturned, NULL))
    {
-	info->isSystem = true;
-	info->isBoot = true;
+	if (extents.NumberOfDiskExtents > 0 && (int) extents.Extents[0].DiskNumber == diskNumber)
+	{
+	 info->isSystem = true;
+	 info->isBoot = true;
+	}
    }
+   CloseHandle (volumeHandle);
   }
-  CloseHandle (volumeHandle);
+ }
+ else
+ {
+  LOG_WARN ("GetSystemDirectoryA failed, falling back to default C:");
+  char systemDrive[4] = "C:";
+  char volumePath[64];
+  snprintf (volumePath, sizeof (volumePath), "\\\\.\\%s", systemDrive);
+  HANDLE volumeHandle = CreateFileA (volumePath, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+  if (volumeHandle != INVALID_HANDLE_VALUE)
+  {
+   VOLUME_DISK_EXTENTS extents;
+   if (DeviceIoControl (volumeHandle, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, &extents, sizeof (extents), &bytesReturned, NULL))
+   {
+	if (extents.NumberOfDiskExtents > 0 && (int) extents.Extents[0].DiskNumber == diskNumber)
+	{
+	 info->isSystem = true;
+	 info->isBoot = true;
+	}
+   }
+   CloseHandle (volumeHandle);
+  }
  }
  CloseHandle (deviceHandle);
  return ERR_OK;

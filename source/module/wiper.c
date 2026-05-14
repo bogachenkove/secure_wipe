@@ -915,6 +915,44 @@ static error_code_t wiperDestroyFilesystemMetadata (device_t *device, int passes
  return ERR_OK;
 }
 
+#ifdef _WIN32
+static void dismountVolumesOnDisk (int diskNumber)
+{
+ wchar_t volumeName[MAX_PATH];
+ HANDLE findHandle = FindFirstVolumeW (volumeName, MAX_PATH);
+ if (findHandle == INVALID_HANDLE_VALUE)
+  return;
+ do
+ {
+  wchar_t devicePath[MAX_PATH];
+  DWORD charsReturned;
+  if (GetVolumePathNamesForVolumeNameW (volumeName, devicePath, MAX_PATH, &charsReturned))
+  {
+   HANDLE volume = CreateFileW (volumeName, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+   if (volume != INVALID_HANDLE_VALUE)
+   {
+	VOLUME_DISK_EXTENTS extents;
+	DWORD bytes;
+	if (DeviceIoControl (volume, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, &extents, sizeof (extents), &bytes, NULL))
+	{
+	 for (DWORD i = 0; i < extents.NumberOfDiskExtents; i++)
+	 {
+	  if ((int) extents.Extents[i].DiskNumber == diskNumber)
+	  {
+	   DeviceIoControl (volume, FSCTL_DISMOUNT_VOLUME, NULL, 0, NULL, 0, &bytes, NULL);
+	   DeviceIoControl (volume, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, &bytes, NULL);
+	   break;
+	  }
+	 }
+	}
+	CloseHandle (volume);
+   }
+  }
+ } while (FindNextVolumeW (findHandle, volumeName, MAX_PATH));
+ FindVolumeClose (findHandle);
+}
+#endif
+
 bool wiperTryRemoveWriteProtection (device_t *device)
 {
  if (!device || !device->isOpen)
@@ -922,6 +960,12 @@ bool wiperTryRemoveWriteProtection (device_t *device)
  LOG_INFO ("Attempting to remove write protection...");
 
 #ifdef _WIN32
+ int diskNumber = -1;
+ if (sscanf (device->path, "\\\\.\\PhysicalDrive%d", &diskNumber) == 1)
+ {
+  dismountVolumesOnDisk (diskNumber);
+ }
+
  DWORD bytesReturned;
  typedef struct
  {
@@ -945,13 +989,13 @@ bool wiperTryRemoveWriteProtection (device_t *device)
  if (DeviceIoControl (device->handle, IOCTL_DISK_SET_DISK_ATTRIBUTES, &attributes, sizeof (attributes), NULL, 0, &bytesReturned, NULL))
  {
   LOG_INFO ("Write protection removed via IOCTL_DISK_SET_DISK_ATTRIBUTES");
-  return true;
  }
- else
- {
-  DWORD error = GetLastError ();
-  LOG_WARN ("IOCTL_DISK_SET_DISK_ATTRIBUTES failed with error %lu", error);
- }
+
+ PREVENT_MEDIA_REMOVAL pmr = {FALSE};
+ DeviceIoControl (device->handle, IOCTL_STORAGE_MEDIA_REMOVAL, &pmr, sizeof (pmr), NULL, 0, &bytesReturned, NULL);
+
+ DeviceIoControl (device->handle, IOCTL_DISK_UPDATE_PROPERTIES, NULL, 0, NULL, 0, &bytesReturned, NULL);
+
  CloseHandle (device->handle);
  device->handle =
 	 CreateFileA (device->path, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);

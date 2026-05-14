@@ -7,7 +7,7 @@
 #include <ctype.h>
 
 #define SECURE_WIPE_NAME "Secure Wipe"
-#define SECURE_WIPE_VERSION "2.0.6.0"
+#define SECURE_WIPE_VERSION "2.0.7.0"
 #define SECURE_WIPE_DESCRIPTION "Data Destruction Tool"
 #define SECURE_WIPE_AUTHOR "Bogachenko Vyacheslav"
 #define SECURE_WIPE_CONTACT "bogachenkove@outlook.com"
@@ -121,10 +121,14 @@ void printUsage (const char *programName)
  printf ("  -q, --quiet           Quiet mode\n");
  printf ("  --methods             List wipe methods with descriptions\n");
  printf ("  --cycle N             Repeat full wipe cycle N times (default 1, max 100)\n");
- printf ("\nEmergency Mode (write zeros to first N sectors or N blocks):\n");
- printf ("  --emergency           Enable emergency zero-write mode (requires --buffer and either --sector or --block)\n");
+ printf ("\nEmergency Mode (write zeros to device):\n");
+ printf ("  --emergency           Enable emergency zero-write mode\n");
+ printf ("                        Without --sector/--block: overwrite entire device\n");
+ printf ("                        With --sector N: overwrite first N sectors\n");
+ printf ("                        With --block N: overwrite N blocks (block size = --buffer)\n");
  printf ("  --sector N            Number of sectors to overwrite (must be >0)\n");
  printf ("  --block N             Number of blocks to overwrite (block size = --buffer)\n");
+ printf ("  -b, --buffer SIZE     I/O buffer size (optional for full disk wipe)\n");
 }
 
 void printVersion (void)
@@ -493,19 +497,14 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
  {
   if (!config->bufferGiven)
   {
-   fprintf (stderr, "ERROR: --emergency requires --buffer SIZE (e.g., --buffer 1M). See --help.\n");
-   return false;
+   config->bufferSize = gBufferSize;
+   config->bufferGiven = true;
+   LOG_INFO ("Emergency mode: using default buffer size %zu bytes", gBufferSize);
   }
 
   if (config->blockGiven && config->emergencySectors != 0)
   {
    fprintf (stderr, "ERROR: --emergency cannot use both --sector and --block. Choose one. See --help.\n");
-   return false;
-  }
-
-  if (!config->blockGiven && config->emergencySectors == 0)
-  {
-   fprintf (stderr, "ERROR: --emergency requires either --sector N or --block N. See --help.\n");
    return false;
   }
 
@@ -519,6 +518,10 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
    }
    uint64_t sectorsPerBlock = bytesPerBlock / SECTOR_SIZE;
    config->emergencySectors = config->blockCount * sectorsPerBlock;
+  }
+  else if (config->emergencySectors == 0)
+  {
+   LOG_INFO ("Emergency mode: full disk zeroing (no sector/block limit)");
   }
 
   if (config->listDisks || config->selectDisk || config->analyzeOnly || config->destroyPartitionTable || config->quickWpCheck || config->skipAnalysis)

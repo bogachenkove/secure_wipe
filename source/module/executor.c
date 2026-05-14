@@ -327,12 +327,25 @@ int emergencyWipe (const program_config_t *config)
  }
 
  uint64_t sectorsToWrite = config->emergencySectors;
- if (sectorsToWrite > device.sectorCount)
+ uint64_t totalSectors = device.sectorCount;
+
+ if (sectorsToWrite == 0)
  {
-  fprintf (stderr, "Requested %llu sectors, but device has only %llu sectors\n", (unsigned long long) sectorsToWrite,
-		   (unsigned long long) device.sectorCount);
-  deviceClose (&device);
-  return 1;
+  sectorsToWrite = totalSectors;
+  char sizeString[32];
+  formatBytes (device.sizeBytes, sizeString, sizeof (sizeString));
+  printf ("Emergency zero-write: FULL DISK (%llu sectors, %s)\n", (unsigned long long) totalSectors, sizeString);
+ }
+ else
+ {
+  if (sectorsToWrite > device.sectorCount)
+  {
+   fprintf (stderr, "Requested %llu sectors, but device has only %llu sectors\n", (unsigned long long) sectorsToWrite,
+			(unsigned long long) device.sectorCount);
+   deviceClose (&device);
+   return 1;
+  }
+  printf ("Emergency zero-write: first %llu sectors, buffer %zu bytes\n", (unsigned long long) sectorsToWrite, config->bufferSize);
  }
 
  size_t bufferBytes = config->bufferSize;
@@ -354,7 +367,8 @@ int emergencyWipe (const program_config_t *config)
  memset (zeroBuffer, 0, bufferBytes);
 
  uint64_t writtenSectors = 0;
- printf ("Emergency zero-write: %llu sectors, buffer %zu bytes\n", (unsigned long long) sectorsToWrite, bufferBytes);
+ printf ("Progress: 0 / %llu sectors (0%%)", (unsigned long long) sectorsToWrite);
+ fflush (stdout);
 
  while (writtenSectors < sectorsToWrite)
  {
