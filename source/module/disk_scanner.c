@@ -83,7 +83,7 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
  info->diskNumber = diskNumber;
  info->sectorSize = SECTOR_SIZE;
 
- DWORD bytesReturned;
+ DWORD bytesReturned = 0;
  DISK_GEOMETRY_EX geometry;
  if (DeviceIoControl (deviceHandle, IOCTL_DISK_GET_DRIVE_GEOMETRY_EX, NULL, 0, &geometry, sizeof (geometry), &bytesReturned, NULL))
  {
@@ -97,6 +97,7 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
  query.QueryType = PropertyStandardQuery;
 
  uint8_t propertyBuffer[4096];
+ bytesReturned = 0;
  if (DeviceIoControl (deviceHandle, IOCTL_STORAGE_QUERY_PROPERTY, &query, sizeof (query), propertyBuffer, sizeof (propertyBuffer), &bytesReturned,
 					  NULL))
  {
@@ -146,6 +147,7 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
    break;
   }
  }
+
  char systemPath[MAX_PATH];
  if (GetSystemDirectoryA (systemPath, sizeof (systemPath)))
  {
@@ -155,6 +157,7 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
   HANDLE volumeHandle = CreateFileA (volumePath, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
   if (volumeHandle != INVALID_HANDLE_VALUE)
   {
+   bytesReturned = 0;
    VOLUME_DISK_EXTENTS extents;
    if (DeviceIoControl (volumeHandle, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, &extents, sizeof (extents), &bytesReturned, NULL))
    {
@@ -176,6 +179,7 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
   HANDLE volumeHandle = CreateFileA (volumePath, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
   if (volumeHandle != INVALID_HANDLE_VALUE)
   {
+   bytesReturned = 0;
    VOLUME_DISK_EXTENTS extents;
    if (DeviceIoControl (volumeHandle, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, &extents, sizeof (extents), &bytesReturned, NULL))
    {
@@ -188,6 +192,7 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
    CloseHandle (volumeHandle);
   }
  }
+
  CloseHandle (deviceHandle);
  return ERR_OK;
 }

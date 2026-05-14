@@ -5,9 +5,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <errno.h>
 
 #define SECURE_WIPE_NAME "Secure Wipe"
-#define SECURE_WIPE_VERSION "2.0.7.0"
+#define SECURE_WIPE_VERSION "2.0.8.0"
 #define SECURE_WIPE_DESCRIPTION "Data Destruction Tool"
 #define SECURE_WIPE_AUTHOR "Bogachenko Vyacheslav"
 #define SECURE_WIPE_CONTACT "bogachenkove@outlook.com"
@@ -447,8 +448,10 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
   {
    if (argIndex + 1 < argc)
    {
-	config->emergencySectors = strtoull (argv[++argIndex], NULL, 10);
-	if (config->emergencySectors == 0)
+	char *end;
+	errno = 0;
+	config->emergencySectors = strtoull (argv[++argIndex], &end, 10);
+	if (errno != 0 || *end != '\0' || config->emergencySectors == 0)
 	{
 	 fprintf (stderr, "ERROR: --sector must be a positive number. See --help.\n");
 	 return false;
@@ -464,8 +467,10 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
   {
    if (argIndex + 1 < argc)
    {
-	config->blockCount = strtoull (argv[++argIndex], NULL, 10);
-	if (config->blockCount == 0)
+	char *end;
+	errno = 0;
+	config->blockCount = strtoull (argv[++argIndex], &end, 10);
+	if (errno != 0 || *end != '\0' || config->blockCount == 0)
 	{
 	 fprintf (stderr, "ERROR: --block must be a positive number. See --help.\n");
 	 return false;
@@ -517,6 +522,11 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
 	return false;
    }
    uint64_t sectorsPerBlock = bytesPerBlock / SECTOR_SIZE;
+   if (config->blockCount > UINT64_MAX / sectorsPerBlock)
+   {
+	fprintf (stderr, "ERROR: block count too large, would overflow. See --help.\n");
+	return false;
+   }
    config->emergencySectors = config->blockCount * sectorsPerBlock;
   }
   else if (config->emergencySectors == 0)

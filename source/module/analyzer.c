@@ -5,6 +5,11 @@ static error_code_t growUint64Array (uint64_t **array, size_t *capacity, size_t 
 {
  if (*count >= *capacity)
  {
+  if (*capacity > SIZE_MAX / 2)
+  {
+   LOG_ERROR ("Capacity overflow detected");
+   return ERR_MEMORY;
+  }
   size_t newCapacity = *capacity * 2;
   if (newCapacity > MAX_BAD_SECTORS)
    newCapacity = MAX_BAD_SECTORS;
@@ -71,6 +76,11 @@ error_code_t analyzerScanDevice (device_t *device, analysis_result_t *result, pr
 {
  if (!device || !device->isOpen || !result)
   return ERR_INVALID_ARG;
+ if (device->sectorCount == UINT64_MAX)
+ {
+  LOG_ERROR ("Device size too large (UINT64_MAX sectors) – cannot scan safely");
+  return ERR_INVALID_ARG;
+ }
  LOG_INFO ("Starting device analysis...");
  LOG_INFO ("Total sectors to scan: %llu", (unsigned long long) device->sectorCount);
  result->totalSectors = device->sectorCount;
@@ -87,7 +97,7 @@ error_code_t analyzerScanDevice (device_t *device, analysis_result_t *result, pr
  while (currentSector < device->sectorCount)
  {
   uint32_t sectorsToRead = (uint32_t) gBufferSectors;
-  if (currentSector + sectorsToRead > device->sectorCount)
+  if (currentSector > device->sectorCount - sectorsToRead)
    sectorsToRead = (uint32_t) (device->sectorCount - currentSector);
   error_code_t readError = ioOps->readSectors (device, currentSector, sectorsToRead, readBuffer);
   if (readError == ERR_OK)
@@ -154,6 +164,11 @@ uint64_t analyzerVerifyWipe (device_t *device, progress_callback_t progress)
 {
  if (!device || !device->isOpen)
   return UINT64_MAX;
+ if (device->sectorCount == UINT64_MAX)
+ {
+  LOG_ERROR ("Device size too large (UINT64_MAX sectors) – cannot verify safely");
+  return UINT64_MAX;
+ }
  LOG_INFO ("Starting wipe verification...");
  uint8_t *readBuffer = (uint8_t *) alignedAlloc (gBufferSize);
  if (!readBuffer)
@@ -166,7 +181,7 @@ uint64_t analyzerVerifyWipe (device_t *device, progress_callback_t progress)
  while (currentSector < device->sectorCount)
  {
   uint32_t sectorsToRead = (uint32_t) gBufferSectors;
-  if (currentSector + sectorsToRead > device->sectorCount)
+  if (currentSector > device->sectorCount - sectorsToRead)
    sectorsToRead = (uint32_t) (device->sectorCount - currentSector);
   if (ioOps->readSectors (device, currentSector, sectorsToRead, readBuffer) != ERR_OK)
   {
@@ -277,6 +292,11 @@ error_code_t analyzerScanDeviceExtended (device_t *device, extended_analysis_res
 {
  if (!device || !device->isOpen || !result)
   return ERR_INVALID_ARG;
+ if (device->sectorCount == UINT64_MAX)
+ {
+  LOG_ERROR ("Device size too large (UINT64_MAX sectors) – cannot scan safely");
+  return ERR_INVALID_ARG;
+ }
  bool doWriteTest = (flags & ANALYZE_WRITE_TEST) != 0;
  bool detectWp = (flags & ANALYZE_DETECT_WP) != 0 || doWriteTest;
  if (doWriteTest)
@@ -316,7 +336,7 @@ error_code_t analyzerScanDeviceExtended (device_t *device, extended_analysis_res
  while (currentSector < device->sectorCount)
  {
   uint32_t sectorsToProcess = (uint32_t) gBufferSectors;
-  if (currentSector + sectorsToProcess > device->sectorCount)
+  if (currentSector > device->sectorCount - sectorsToProcess)
    sectorsToProcess = (uint32_t) (device->sectorCount - currentSector);
   error_code_t readError = ioOps->readSectors (device, currentSector, sectorsToProcess, readBuffer);
   if (readError == ERR_OK)

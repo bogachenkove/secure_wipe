@@ -207,6 +207,13 @@ after_analysis:
   result = ERR_OPEN_DEVICE;
   goto cleanup;
  }
+ if (isDeviceMounted (config->devicePath))
+ {
+  LOG_ERROR ("Device %s became mounted after open, aborting to avoid FS corruption.", config->devicePath);
+  deviceClose (device);
+  result = ERR_PERMISSION;
+  goto cleanup;
+ }
 
  uint8_t *testBuffer = (uint8_t *) alignedAlloc (SECTOR_SIZE);
  if (!testBuffer)
@@ -309,6 +316,7 @@ int runWipe (const program_config_t *config, analysis_result_t *analysis)
   if (config->cycles > 1 && cycle < config->cycles)
   {
    printf ("\n=== Cycle %u completed successfully. Starting next cycle... ===\n", cycle);
+   analyzerFreeResult (analysis);
    memset (analysis, 0, sizeof (analysis_result_t));
   }
  }
