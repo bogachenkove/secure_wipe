@@ -116,6 +116,12 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     HOMEPAGE="${HOMEPAGE}"
 )
 
+# For Linux/Unix: define _GNU_SOURCE to expose O_DIRECT and other extensions
+# (required because CMAKE_C_EXTENSIONS is set to OFF).
+if(NOT WIN32)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE _GNU_SOURCE)
+endif()
+
 # Add include directories for the compiler to search when resolving #include.
 # The 'module' subdirectory is kept separate to mirror the C source layout.
 target_include_directories(${PROJECT_NAME} PRIVATE

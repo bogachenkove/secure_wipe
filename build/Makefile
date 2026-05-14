@@ -177,7 +177,8 @@ else
     # -std=c17              – Enforce C17 standard (no GNU extensions).
     # -finput-charset=UTF-8 – Interpret source files as UTF-8.
     # -fexec-charset=UTF-8  – Store string literals as UTF-8 in the binary.
-    CFLAGS  := -std=c17 -finput-charset=UTF-8 -fexec-charset=UTF-8
+    # -D_GNU_SOURCE         – Enable GNU extensions (O_DIRECT, etc.) for Linux.
+    CFLAGS  := -std=c17 -finput-charset=UTF-8 -fexec-charset=UTF-8 -D_GNU_SOURCE
 
     # Preprocessor definitions: -DNAME="value" (nested quotes handled similarly).
     DEFS    := -DPRODUCT_NAME="\"$(PRODUCT_NAME)\"" -DFILE_DESCRIPTION="\"$(FILE_DESCRIPTION)\"" \
@@ -252,33 +253,33 @@ all: $(FINAL_TARGET)
 # This matches CMake's add_executable and target_link_libraries steps.
 $(FINAL_TARGET): $(OBJECTS)
 ifeq ($(MSVC),1)
-    # For MSVC: use the link.exe linker explicitly.
-    # $^ expands to all dependencies (all object files).
-    # $@ is the target name (e.g., securewipe.exe).
-    # /OUT:$@ specifies output file.
-    link.exe $(LDFLAGS) /OUT:$@ $^ $(LIBS)
+	# For MSVC: use the link.exe linker explicitly.
+	# $^ expands to all dependencies (all object files).
+	# $@ is the target name (e.g., securewipe.exe).
+	# /OUT:$@ specifies output file.
+	link.exe $(LDFLAGS) /OUT:$@ $^ $(LIBS)
 else
-    # For GCC/Clang: use CC as the linker driver (frontend).
-    $(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LIBS)
+	# For GCC/Clang: use CC as the linker driver (frontend).
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LIBS)
 endif
 
 # Rule to compile a single .c file into a .o file.
 # The directory for the object file is created automatically.
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
-    # Create the target directory (e.g., ./MakeFiles/securewipe.dir/module)
-    # before compiling. '@' suppresses echoing of the mkdir command.
-    @mkdir -p $(dir $@)
+	# Create the target directory (e.g., ./MakeFiles/securewipe.dir/module)
+	# before compiling. '@' suppresses echoing of the mkdir command.
+	@mkdir -p $(dir $@)
 ifeq ($(MSVC),1)
-    # MSVC compile command:
-    # /c          – Compile only, no link.
-    # $<          – First dependency (the .c file).
-    # /Fo$@       – Output object to the target path.
-    $(CC) $(CFLAGS) $(DEFS) /c $< /Fo$@
+	# MSVC compile command:
+	# /c          – Compile only, no link.
+	# $<          – First dependency (the .c file).
+	# /Fo$@       – Output object to the target path.
+	$(CC) $(CFLAGS) $(DEFS) /c $< /Fo$@
 else
-    # GCC/Clang compile command:
-    # -c          – Compile only, no link.
-    # -o $@       – Output object file.
-    $(CC) $(CFLAGS) $(DEFS) -c $< -o $@
+	# GCC/Clang compile command:
+	# -c          – Compile only, no link.
+	# -o $@       – Output object file.
+	$(CC) $(CFLAGS) $(DEFS) -c $< -o $@
 endif
 
 # -----------------------------------------------------------------------------
@@ -288,7 +289,7 @@ endif
 # Windows debug databases (.pdb), and manifest files (.manifest).
 # Matches the behavior of CMake's clean target.
 clean:
-    rm -rf $(OBJ_DIR) $(FINAL_TARGET) *.pdb *.manifest
+	rm -rf $(OBJ_DIR) $(FINAL_TARGET) *.pdb *.manifest
 
 # -----------------------------------------------------------------------------
 # Phony Targets (not actual files)
