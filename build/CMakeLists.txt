@@ -48,7 +48,7 @@ endif()
 
 # Define the source directory relative to this CMakeLists.txt file.
 # All .c files will be searched under this directory tree.
-set(SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/source")
+set(SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../source")
 
 # Path to the metadata.c file that contains #define constants for version,
 # copyright, license, etc. This file is shared between the build system

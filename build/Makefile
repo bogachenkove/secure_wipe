@@ -31,7 +31,7 @@ endif
 # Directory Structure
 # -----------------------------------------------------------------------------
 # Source code root directory (contains all .c files recursively).
-SRC_DIR  := source
+SRC_DIR  := ../source
 # Object file output directory – mimics CMake's directory structure to avoid
 # cluttering the source tree. All .o files go under ./MakeFiles/securewipe.dir.
 OBJ_DIR  := ./MakeFiles/$(TARGET).dir
