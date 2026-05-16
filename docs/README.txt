@@ -1,19 +1,19 @@
-Secure Wipe v2.0.8.0
+Secure Wipe v2.0.10.0
 Data Destruction Tool
 
 DESCRIPTION
   Secure Wipe is a cross-platform (Windows/Linux/macOS) utility for irreversibly
-  erasing data on storage devices using multiple overwriting methods.
-  It supports analysis, bad sector detection, write‑protection testing,
-  partition table destruction, and verification.
+  erasing data on storage devices (disks, SSDs, USB drives) and files/directories.
+  It supports disk analysis, bad sector detection, write‑protection testing,
+  partition table destruction, ATA Secure Erase, and secure file wiping.
 
 REQUIREMENTS
   - Windows: Administrator privileges
   - Linux/macOS: root privileges
 
 BUILD
-  The project supports multiple platforms (Windows, Linux, macOS) via two 
-  comprehensive build systems. Both automatically handle compiler detection, 
+  The project supports multiple platforms (Windows, Linux, macOS) via two
+  comprehensive build systems. Both automatically handle compiler detection,
   metadata extraction, and hardware optimization (LTO, AVX2, Native arch).
 
   Using CMake:
@@ -36,6 +36,8 @@ USAGE
   securewipe [options] <device>
   securewipe -L, --list-storage [-A, --show-system-storage]
   securewipe -S, --select-storage
+  securewipe --wipe-file <path>
+  securewipe --wipe-dir <path>
 
 OPTIONS
   Information:
@@ -46,26 +48,20 @@ OPTIONS
     -S, --select-storage             Interactive storage device selection
     -A, --show-system-storage        Show all devices (including system disks)
 
-  Wipe methods (19 standards + custom in interactive mode):
+  Wipe methods (software overwrite):
     --zero                           Zero fill (1 pass)
     --random N                       Random data (N passes, 1‑100)
-    --dod-short                      DoD 5220.22-M short (3 passes) [default]
-    --dod-full                       DoD 5220.22-M ECE (7 passes)
-    --schneier                       Bruce Schneier (7 passes: 0xFF, 0x00, 5×random)
-    --gutmann                        Peter Gutmann (35 passes, MFM/RLL patterns + random)
-    --afssi-5020                     AFSSI‑5020 (3 passes: 0x00, 0xFF, random)
-    --nist-clear                     NIST SP-800-88 Clear (1 pass: zeros)
-    --nist-purge                     NIST SP-800-88 Purge (3 passes: random, zero, random)
-    --bsi-vsitr                      German BSI VSITR (7 passes: 0x00,0xFF,0x00,0xFF,0x00,0xFF,random)
-    --rcmp-tssit                     Canadian RCMP TSSIT OPS-II (7 passes)
-    --hmg-is5-baseline               UK HMG IS5 Baseline (2 passes: zeros, random)
-    --hmg-is5-enhanced               UK HMG IS5 Enhanced (3 passes: 0x00, 0xFF, random)
-    --gost-50739-95                  Russian GOST R 50739-95 (2 passes: zeros, random)
-    --navso-p5239-26                 US Navy NAVSO P-5239-26 (3 passes: 0x00, 0xFF, random)
-    --ism-6.2.92                     Australian ISM 6.2.92 (3 passes: 0x00, 0xFF, random)
-    --nap-14.1-c                     Spanish NAP-14.1-C (3 passes: 0x00, 0xFF, 0x00)
-    --pfitzner-7                     Pfitzner 7-pass (7× random + verify after each pass)
-    --pfitzner-33                    Pfitzner 33-pass (33× random + verify after each pass)
+
+  ATA Security Commands (hardware erase):
+    --ata-erase                      Perform ATA Secure Erase (normal)
+    --ata-enhanced-erase             Perform ATA Enhanced Secure Erase
+    Note: Requires a device path, incompatible with other wipe methods
+
+  File and Directory Wiping:
+    --wipe-file <path>               Securely wipe a single file
+    --wipe-dir <path>                Securely wipe a directory recursively
+    --rename-count <N>               Number of renames before deletion (default 3, 0‑255)
+    --no-rename                      Disable renaming before deletion
 
   Analysis:
     --analyze                        Read‑only analysis (bad sectors, readability)
@@ -97,21 +93,24 @@ OPTIONS
     --methods                        List all wipe methods with descriptions
 
 EXAMPLES
-  securewipe -L --show-system-storage          # list all disks including system
-  securewipe --select-storage                  # interactive device selection
-  securewipe --analyze /dev/sdb                # read‑only analysis
-  securewipe --skip-analysis --zero /dev/sdc   # skip analysis, write zeros immediately
-  securewipe --dod-short -y \\.\PhysicalDrive2 # wipe disk 2 with DoD short
-  securewipe --nist-purge /dev/sdc             # NIST Purge wipe
-  securewipe --bsi-vsitr /dev/sdd              # German BSI standard
-  securewipe --pfitzner-33 --cycle 3 /dev/nvme0n1   # 3 cycles of 33-pass Pfitzner
+  securewipe -L --show-system-storage              # list all disks including system
+  securewipe --select-storage                      # interactive device selection
+  securewipe --analyze /dev/sdb                    # read‑only analysis
+  securewipe --skip-analysis --zero /dev/sdc       # skip analysis, write zeros immediately
+  securewipe --zero -y \\.\PhysicalDrive2          # zero fill disk 2
+  securewipe --random 5 /dev/sdc                   # 5 passes of random data
+  securewipe --ata-erase /dev/sda                  # ATA Secure Erase (normal)
+  securewipe --ata-enhanced-erase /dev/nvme0n1     # ATA Enhanced Secure Erase
   securewipe --destroy-partition-table \\.\PhysicalDrive0   # wipe MBR/GPT only
-  securewipe --log ./custom.log /dev/sdb       # write log to custom file
-  securewipe --no-log /dev/sdb                 # disable logging
-  securewipe --emergency --sector 1000 /dev/sdc   # emergency zero‑write first 1000 sectors (default buffer)
-  securewipe --emergency --buffer 1M --block 10 /dev/sdc   # zero 10 blocks of 1MB each
-  securewipe --emergency /dev/sdc              # zero entire device (full disk)
-  securewipe --methods                         # show all wipe methods
+  securewipe --log ./custom.log /dev/sdb           # write log to custom file
+  securewipe --no-log /dev/sdb                     # disable logging
+  securewipe --emergency --sector 1000 /dev/sdc    # emergency zero‑write first 1000 sectors
+  securewipe --emergency --buffer 1M --block 10 /dev/sdc  # zero 10 blocks of 1MB each
+  securewipe --emergency /dev/sdc                  # zero entire device (full disk)
+  securewipe --wipe-file secret.txt                # securely wipe a file
+  securewipe --wipe-dir ./confidential             # recursively wipe directory
+  securewipe --rename-count 5 --wipe-file data.bin # rename 5 times before deletion
+  securewipe --methods                             # show all wipe methods
 
 NOTES
   - Always backup important data before wiping.
@@ -121,11 +120,14 @@ NOTES
   - On Windows use \\.\PhysicalDriveN (N = disk number).
   - On Linux use /dev/sdX, /dev/nvmeXnY, etc.
   - Verification reads entire device after wipe to check for errors.
+  - ATA Secure Erase is a hardware command, much faster than software overwrite,
+    but may not work on USB‑connected drives (many USB bridges block ATA commands).
   - Emergency mode is intended for quick partial overwrite (e.g., wiping partition table or boot area).
     Without --sector/--block it erases the whole disk. Buffer size is optional (default 512KB).
-  - Pfitzner methods verify after each pass, significantly increasing operation time.
   - Use --cycle to repeat the entire wipe process (analysis + wipe + verification) multiple times.
-  - The program now includes additional safety checks: overflow protection, strict argument validation,
+  - File wiping overwrites file content (zero or random) and optionally renames the file
+    multiple times before deletion to complicate forensic recovery.
+  - The program includes safety checks: overflow protection, strict argument validation,
     and a second mount check just before writing to prevent filesystem corruption.
 
 LICENSE
