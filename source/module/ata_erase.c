@@ -38,48 +38,61 @@ static error_code_t ataPassThroughWindows (device_t *device, BYTE command, BYTE 
  if (!device || !device->isOpen)
   return ERR_INVALID_ARG;
 
- ATA_PASS_THROUGH_EX passThrough;
- memset (&passThrough, 0, sizeof (passThrough));
- passThrough.Length = sizeof (passThrough);
- passThrough.TimeOutValue = 30;
- passThrough.DataBufferOffset = sizeof (passThrough);
- passThrough.DataTransferLength = bufferSize;
- passThrough.AtaFlags = isWrite ? ATA_FLAGS_DATA_OUT : ATA_FLAGS_DATA_IN;
-
- if (command == 0xF3 || command == 0xF4 || command == 0xF5 || command == 0xF6)
-  passThrough.AtaFlags = ATA_FLAGS_48BIT_COMMAND;
-
- passThrough.CurrentTaskFile[0] = command;
- passThrough.CurrentTaskFile[1] = features;
- passThrough.CurrentTaskFile[2] = sectorCount;
- passThrough.CurrentTaskFile[3] = sectorNumber;
- passThrough.CurrentTaskFile[4] = cylinderLow;
- passThrough.CurrentTaskFile[5] = cylinderHigh;
- passThrough.CurrentTaskFile[6] = driveHead;
-
- DWORD bytesReturned;
- DWORD totalBufferSize = sizeof (passThrough) + bufferSize;
+ DWORD totalBufferSize = sizeof (ATA_PASS_THROUGH_EX) + bufferSize;
  BYTE *fullBuffer = (BYTE *) malloc (totalBufferSize);
  if (!fullBuffer)
   return ERR_MEMORY;
 
- memcpy (fullBuffer, &passThrough, sizeof (passThrough));
- if (dataBuffer && bufferSize > 0 && isWrite)
-  memcpy (fullBuffer + sizeof (passThrough), dataBuffer, bufferSize);
+ memset (fullBuffer, 0, totalBufferSize);
 
+ ATA_PASS_THROUGH_EX *pte = (ATA_PASS_THROUGH_EX *) fullBuffer;
+ pte->Length = sizeof (ATA_PASS_THROUGH_EX);
+ pte->TimeOutValue = 30;
+ pte->DataBufferOffset = sizeof (ATA_PASS_THROUGH_EX);
+ pte->DataTransferLength = bufferSize;
+ pte->AtaFlags = isWrite ? ATA_FLAGS_DATA_OUT : ATA_FLAGS_DATA_IN;
+
+ if (command == 0xF3 || command == 0xF4 || command == 0xF5 || command == 0xF6)
+  pte->AtaFlags = ATA_FLAGS_48BIT_COMMAND;
+
+ pte->CurrentTaskFile[0] = command;
+ pte->CurrentTaskFile[1] = features;
+ pte->CurrentTaskFile[2] = sectorCount;
+ pte->CurrentTaskFile[3] = sectorNumber;
+ pte->CurrentTaskFile[4] = cylinderLow;
+ pte->CurrentTaskFile[5] = cylinderHigh;
+ pte->CurrentTaskFile[6] = driveHead;
+
+ if (dataBuffer && bufferSize > 0 && isWrite)
+ {
+  if (pte->DataBufferOffset + bufferSize > totalBufferSize)
+  {
+   free (fullBuffer);
+   return ERR_INVALID_ARG;
+  }
+  memcpy (fullBuffer + pte->DataBufferOffset, dataBuffer, bufferSize);
+ }
+
+ DWORD bytesReturned;
  BOOL success =
 	 DeviceIoControl (device->handle, IOCTL_ATA_PASS_THROUGH, fullBuffer, totalBufferSize, fullBuffer, totalBufferSize, &bytesReturned, NULL);
 
  if (success)
  {
-  ATA_PASS_THROUGH_EX *result = (ATA_PASS_THROUGH_EX *) fullBuffer;
-  if (result->CurrentTaskFile[0] & 0x01)
+  if (pte->CurrentTaskFile[0] & 0x01)
   {
    free (fullBuffer);
    return ERR_READ_DEVICE;
   }
   if (dataBuffer && !isWrite && bufferSize > 0)
-   memcpy (dataBuffer, fullBuffer + sizeof (passThrough), bufferSize);
+  {
+   if (pte->DataBufferOffset + bufferSize > totalBufferSize)
+   {
+	free (fullBuffer);
+	return ERR_INVALID_ARG;
+   }
+   memcpy (dataBuffer, fullBuffer + pte->DataBufferOffset, bufferSize);
+  }
   free (fullBuffer);
   return ERR_OK;
  }
@@ -119,6 +132,9 @@ static error_code_t ataPassThroughLinux (device_t *device, uint8_t command, uint
 										 void *dataBuffer, size_t bufferSize, bool isWrite)
 {
  if (!device || !device->isOpen)
+  return ERR_INVALID_ARG;
+
+ if (bufferSize > UINT_MAX)
   return ERR_INVALID_ARG;
 
  struct sg_io_hdr sgHeader;

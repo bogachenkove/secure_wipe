@@ -84,7 +84,7 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
  info->sectorSize = SECTOR_SIZE;
 
  DWORD bytesReturned = 0;
- DISK_GEOMETRY_EX geometry;
+ DISK_GEOMETRY_EX geometry = {0};
  if (DeviceIoControl (deviceHandle, IOCTL_DISK_GET_DRIVE_GEOMETRY_EX, NULL, 0, &geometry, sizeof (geometry), &bytesReturned, NULL))
  {
   info->sizeBytes = geometry.DiskSize.QuadPart;
@@ -96,7 +96,7 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
  query.PropertyId = StorageDeviceProperty;
  query.QueryType = PropertyStandardQuery;
 
- uint8_t propertyBuffer[4096];
+ uint8_t propertyBuffer[4096] = {0};
  bytesReturned = 0;
  if (DeviceIoControl (deviceHandle, IOCTL_STORAGE_QUERY_PROPERTY, &query, sizeof (query), propertyBuffer, sizeof (propertyBuffer), &bytesReturned,
 					  NULL))
@@ -158,7 +158,7 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
   if (volumeHandle != INVALID_HANDLE_VALUE)
   {
    bytesReturned = 0;
-   VOLUME_DISK_EXTENTS extents;
+   VOLUME_DISK_EXTENTS extents = {0};
    if (DeviceIoControl (volumeHandle, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, &extents, sizeof (extents), &bytesReturned, NULL))
    {
 	if (extents.NumberOfDiskExtents > 0 && (int) extents.Extents[0].DiskNumber == diskNumber)
@@ -180,7 +180,7 @@ static error_code_t getDiskInfoWindows (int diskNumber, disk_info_t *info)
   if (volumeHandle != INVALID_HANDLE_VALUE)
   {
    bytesReturned = 0;
-   VOLUME_DISK_EXTENTS extents;
+   VOLUME_DISK_EXTENTS extents = {0};
    if (DeviceIoControl (volumeHandle, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, &extents, sizeof (extents), &bytesReturned, NULL))
    {
 	if (extents.NumberOfDiskExtents > 0 && (int) extents.Extents[0].DiskNumber == diskNumber)

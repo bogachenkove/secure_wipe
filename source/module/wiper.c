@@ -7,48 +7,20 @@ static uint8_t *gWipeBuffer = NULL;
 typedef enum
 {
  PATTERN_ZERO,
- PATTERN_ONE,
- PATTERN_RANDOM,
- PATTERN_FIXED,
- PATTERN_GUTMANN
+ PATTERN_RANDOM
 } pattern_type_t;
 
-static void fillBufferWithPattern (uint8_t *buffer, size_t size, pattern_type_t patternType, const uint8_t *patternData, size_t patternLength)
+static void fillBufferWithPattern (uint8_t *buffer, size_t bufferSize, pattern_type_t patternType, const uint8_t *patternData, size_t patternLength)
 {
+ (void) patternData;
+ (void) patternLength;
  switch (patternType)
  {
  case PATTERN_ZERO:
-  memset (buffer, 0x00, size);
+  memset (buffer, 0x00, bufferSize);
   break;
- case PATTERN_ONE:
-  memset (buffer, 0xFF, size);
-  break;
- case PATTERN_FIXED:
-  memset (buffer, patternData[0], size);
-  break;
- case PATTERN_GUTMANN:
-  if (patternLength == 3)
-  {
-   for (size_t offset = 0; offset < size; offset += 3)
-   {
-	size_t remaining = size - offset;
-	if (remaining >= 3)
-	{
-	 buffer[offset] = patternData[0];
-	 buffer[offset + 1] = patternData[1];
-	 buffer[offset + 2] = patternData[2];
-	}
-	else
-	{
-	 for (size_t byteIndex = 0; byteIndex < remaining; byteIndex++)
-	  buffer[offset + byteIndex] = patternData[byteIndex];
-	}
-   }
-  }
-  else if (patternLength == 1)
-  {
-   memset (buffer, patternData[0], size);
-  }
+ case PATTERN_RANDOM:
+  randomFill (buffer, bufferSize);
   break;
  default:
   break;
@@ -62,7 +34,7 @@ static error_code_t singlePass (device_t *device, pattern_type_t patternType, co
  if (!device || !device->isOpen || !gWipeBuffer)
   return ERR_INVALID_ARG;
 
- const device_io_ops_t *ioOps = deviceIoGetOps ();
+ const device_io_ops_t *ioOperations = deviceIoGetOps ();
  uint64_t currentSector = 0;
  int lastPercent = -1;
  uint64_t writeErrors = 0;
@@ -92,16 +64,16 @@ static error_code_t singlePass (device_t *device, pattern_type_t patternType, co
    fillBufferWithPattern (gWipeBuffer, bufferSize, patternType, patternData, patternLength);
   }
 
-  if (ioOps->writeSectors (device, currentSector, sectorsToWrite, gWipeBuffer) != ERR_OK)
+  if (ioOperations->writeSectors (device, currentSector, sectorsToWrite, gWipeBuffer) != ERR_OK)
   {
    LOG_WARN ("Block write failed at sector %llu, switching to sector-by-sector", (unsigned long long) currentSector);
 
    uint64_t consecutiveErrors = 0;
    const uint64_t MAX_CONSECUTIVE_ERRORS = 100;
 
-   for (uint32_t offset = 0; offset < sectorsToWrite; offset++)
+   for (uint32_t sectorOffset = 0; sectorOffset < sectorsToWrite; sectorOffset++)
    {
-	uint64_t targetSector = currentSector + offset;
+	uint64_t targetSector = currentSector + sectorOffset;
 	if (badSectors && analyzerIsBadSector (badSectors, targetSector))
 	 continue;
 
@@ -110,7 +82,7 @@ static error_code_t singlePass (device_t *device, pattern_type_t patternType, co
 	else
 	 fillBufferWithPattern (gWipeBuffer, device->sectorSize, patternType, patternData, patternLength);
 
-	if (ioOps->writeSectors (device, targetSector, 1, gWipeBuffer) != ERR_OK)
+	if (ioOperations->writeSectors (device, targetSector, 1, gWipeBuffer) != ERR_OK)
 	{
 	 writeErrors++;
 	 consecutiveErrors++;
@@ -144,7 +116,7 @@ static error_code_t singlePass (device_t *device, pattern_type_t patternType, co
   }
  }
 
- ioOps->flush (device);
+ ioOperations->flush (device);
  if (writeErrors > 0)
   LOG_WARN ("%s - completed with %llu write errors", descriptionBuffer, (unsigned long long) writeErrors);
  else
@@ -268,7 +240,7 @@ static void overwriteSectorRange (device_t *device, uint64_t startSector, uint32
 {
  if (!device || !device->isOpen || device->readOnly)
   return;
- const device_io_ops_t *ioOps = deviceIoGetOps ();
+ const device_io_ops_t *ioOperations = deviceIoGetOps ();
  size_t bufferSize = (size_t) sectorCount * SECTOR_SIZE;
  uint8_t *buffer = (uint8_t *) alignedAlloc (bufferSize);
  if (!buffer)
@@ -277,13 +249,13 @@ static void overwriteSectorRange (device_t *device, uint64_t startSector, uint32
   return;
  }
  memset (buffer, fillByte, bufferSize);
- if (ioOps->writeSectors (device, startSector, sectorCount, buffer) != ERR_OK)
+ if (ioOperations->writeSectors (device, startSector, sectorCount, buffer) != ERR_OK)
  {
   LOG_WARN ("Block write failed, trying sector-by-sector");
   for (uint32_t offset = 0; offset < sectorCount; offset++)
   {
    memset (buffer, fillByte, SECTOR_SIZE);
-   ioOps->writeSectors (device, startSector + offset, 1, buffer);
+   ioOperations->writeSectors (device, startSector + offset, 1, buffer);
   }
  }
  alignedFree (buffer);
@@ -318,28 +290,28 @@ error_code_t wiperZeroPartitionTable (device_t *device)
 static void overwriteMetadataRange (device_t *device, uint64_t startSector, uint64_t endSector, int passIndex, progress_callback_t progress,
 									const char *phasePrefix)
 {
- const device_io_ops_t *ioOps = deviceIoGetOps ();
+ const device_io_ops_t *ioOperations = deviceIoGetOps ();
  uint8_t *buffer = (uint8_t *) alignedAlloc (gBufferSize);
  if (!buffer)
   return;
- uint64_t currentSector = startSector;
- while (currentSector < endSector)
+ uint64_t sectorIndex = startSector;
+ while (sectorIndex < endSector)
  {
   uint32_t sectorsToWrite = (uint32_t) gBufferSectors;
-  if (currentSector + sectorsToWrite > endSector)
-   sectorsToWrite = (uint32_t) (endSector - currentSector);
+  if (sectorIndex + sectorsToWrite > endSector)
+   sectorsToWrite = (uint32_t) (endSector - sectorIndex);
   randomFill (buffer, (size_t) sectorsToWrite * SECTOR_SIZE);
-  if (ioOps->writeSectors (device, currentSector, sectorsToWrite, buffer) != ERR_OK)
+  if (ioOperations->writeSectors (device, sectorIndex, sectorsToWrite, buffer) != ERR_OK)
   {
    for (uint32_t offset = 0; offset < sectorsToWrite; offset++)
    {
 	randomFill (buffer, SECTOR_SIZE);
-	ioOps->writeSectors (device, currentSector + offset, 1, buffer);
+	ioOperations->writeSectors (device, sectorIndex + offset, 1, buffer);
    }
   }
-  currentSector += sectorsToWrite;
+  sectorIndex += sectorsToWrite;
   if (progress)
-   progress (currentSector, endSector, passIndex, phasePrefix);
+   progress (sectorIndex, endSector, passIndex, phasePrefix);
  }
  alignedFree (buffer);
 }
@@ -352,7 +324,7 @@ static error_code_t wiperDestroyFilesystemMetadata (device_t *device, int passes
  uint64_t metadataSectors = 8192;
  if (metadataSectors > device->sectorCount / 2)
   metadataSectors = device->sectorCount / 2;
- const device_io_ops_t *ioOps = deviceIoGetOps ();
+ const device_io_ops_t *ioOperations = deviceIoGetOps ();
  for (int passIndex = 1; passIndex <= passes; passIndex++)
  {
   overwriteMetadataRange (device, 0, metadataSectors, passIndex, progress, "Destroying metadata (start)");
@@ -361,7 +333,7 @@ static error_code_t wiperDestroyFilesystemMetadata (device_t *device, int passes
    uint64_t endStart = device->sectorCount - metadataSectors;
    overwriteMetadataRange (device, endStart, device->sectorCount, passIndex, progress, "Destroying metadata (end)");
   }
-  ioOps->flush (device);
+  ioOperations->flush (device);
  }
  LOG_INFO ("Filesystem metadata destruction complete");
  return ERR_OK;
@@ -387,9 +359,9 @@ static void dismountVolumesOnDisk (int diskNumber)
 	DWORD bytes;
 	if (DeviceIoControl (volume, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, &extents, sizeof (extents), &bytes, NULL))
 	{
-	 for (DWORD i = 0; i < extents.NumberOfDiskExtents; i++)
+	 for (DWORD extentIndex = 0; extentIndex < extents.NumberOfDiskExtents; extentIndex++)
 	 {
-	  if ((int) extents.Extents[i].DiskNumber == diskNumber)
+	  if ((int) extents.Extents[extentIndex].DiskNumber == diskNumber)
 	  {
 	   DeviceIoControl (volume, FSCTL_DISMOUNT_VOLUME, NULL, 0, NULL, 0, &bytes, NULL);
 	   DeviceIoControl (volume, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, &bytes, NULL);

@@ -29,7 +29,7 @@ static error_code_t winDeviceOpen (device_t *device, const char *path, bool read
  device->isOpen = true;
  LOG_INFO ("Opened device: %s (mode: %s)", path, readOnly ? "read-only" : "read-write");
 
- DISK_GEOMETRY_EX geometry;
+ DISK_GEOMETRY_EX geometry = {0};
  DWORD bytesReturned = 0;
  if (DeviceIoControl (device->handle, IOCTL_DISK_GET_DRIVE_GEOMETRY_EX, NULL, 0, &geometry, sizeof (geometry), &bytesReturned, NULL))
  {
@@ -38,7 +38,7 @@ static error_code_t winDeviceOpen (device_t *device, const char *path, bool read
  }
  else
  {
-  GET_LENGTH_INFORMATION lengthInfo;
+  GET_LENGTH_INFORMATION lengthInfo = {0};
   bytesReturned = 0;
   if (DeviceIoControl (device->handle, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, &lengthInfo, sizeof (lengthInfo), &bytesReturned, NULL))
   {
@@ -80,7 +80,7 @@ static error_code_t winDeviceReadSectors (device_t *device, uint64_t startSector
  if (!device || !device->isOpen || !buffer)
   return ERR_INVALID_ARG;
 
- LARGE_INTEGER offset;
+ LARGE_INTEGER offset = {0};
  offset.QuadPart = (LONGLONG) startSector * device->sectorSize;
  if (!SetFilePointerEx (device->handle, offset, NULL, FILE_BEGIN))
   return ERR_SEEK_DEVICE;
@@ -99,7 +99,7 @@ static error_code_t winDeviceWriteSectors (device_t *device, uint64_t startSecto
  if (!device || !device->isOpen || !buffer || device->readOnly)
   return ERR_INVALID_ARG;
 
- LARGE_INTEGER offset;
+ LARGE_INTEGER offset = {0};
  offset.QuadPart = (LONGLONG) startSector * device->sectorSize;
  if (!SetFilePointerEx (device->handle, offset, NULL, FILE_BEGIN))
   return ERR_SEEK_DEVICE;

@@ -9,6 +9,7 @@
 #include "module/disk_scanner.h"
 #include "module/device_io.h"
 #include "module/ata_erase.h"
+#include "module/file_wiper.h"
 
 int main (int argumentCount, char *argumentVector[])
 {
@@ -36,6 +37,26 @@ int main (int argumentCount, char *argumentVector[])
   return 1;
  }
 
+ if (configuration.wipeFileMode || configuration.wipeDirMode)
+ {
+  file_wipe_config_t fileConfig = {0};
+  fileConfig.method = configuration.method;
+  fileConfig.passes = configuration.passes;
+  fileConfig.renameBeforeDelete = (gDefaultRenameCount > 0);
+  fileConfig.renameCount = gDefaultRenameCount;
+  fileConfig.preserveTimestamps = false;
+  fileConfig.progress = progressHandler;
+
+  error_code_t err = fileWipePath (configuration.wipeFilePath, &fileConfig);
+  if (err != ERR_OK)
+   fprintf (stderr, "Failed to wipe: %s\n", errorToString (err));
+  else
+   printf ("Wipe completed successfully.\n");
+
+  platformCleanup ();
+  return (err == ERR_OK) ? 0 : 1;
+ }
+
  if (configuration.emergencyMode)
  {
   int exitCode = emergencyWipe (&configuration);
@@ -44,39 +65,39 @@ int main (int argumentCount, char *argumentVector[])
  }
  if (configuration.ataSecureErase)
  {
-	 device_t device;
-	 error_code_t openStatus = deviceOpen(&device, configuration.devicePath, false);
-	 if (openStatus != ERR_OK)
-	 {
-		 fprintf(stderr, "Failed to open device %s: %s\n", configuration.devicePath, errorToString(openStatus));
-		 platformCleanup();
-		 return 1;
-	 }
-	 ata_security_info_t info;
-	 if (ataGetSecurityInfo(&device, &info) != ERR_OK)
-	 {
-		 fprintf(stderr, "ERROR: Cannot query ATA security features.\n");
-		 fprintf(stderr, "This may be because:\n");
-		 fprintf(stderr, "  - Device is connected via USB (many USB bridges block ATA commands)\n");
-		 fprintf(stderr, "  - Device is virtual or does not support ATA Secure Erase\n");
-		 fprintf(stderr, "  - Driver/antivirus is blocking low-level access\n");
-		 fprintf(stderr, "Try using standard wipe methods instead.\n");
-		 deviceClose(&device);
-		 platformCleanup();
-		 return 1;
-	 }
-	 if (!info.supported)
-	 {
-		 fprintf(stderr, "ERROR: ATA Security not supported by this device.\n");
-		 deviceClose(&device);
-		 platformCleanup();
-		 return 1;
-	 }
-	 ata_erase_type_t eraseType = configuration.ataEnhancedErase ? ATA_ERASE_ENHANCED : ATA_ERASE_NORMAL;
-	 int exitCode = ataSecureErase(&device, eraseType, progressHandler);
-	 deviceClose(&device);
-	 platformCleanup();
-	 return exitCode;
+  device_t device;
+  error_code_t openStatus = deviceOpen (&device, configuration.devicePath, false);
+  if (openStatus != ERR_OK)
+  {
+   fprintf (stderr, "Failed to open device %s: %s\n", configuration.devicePath, errorToString (openStatus));
+   platformCleanup ();
+   return 1;
+  }
+  ata_security_info_t info;
+  if (ataGetSecurityInfo (&device, &info) != ERR_OK)
+  {
+   fprintf (stderr, "ERROR: Cannot query ATA security features.\n");
+   fprintf (stderr, "This may be because:\n");
+   fprintf (stderr, "  - Device is connected via USB (many USB bridges block ATA commands)\n");
+   fprintf (stderr, "  - Device is virtual or does not support ATA Secure Erase\n");
+   fprintf (stderr, "  - Driver/antivirus is blocking low-level access\n");
+   fprintf (stderr, "Try using standard wipe methods instead.\n");
+   deviceClose (&device);
+   platformCleanup ();
+   return 1;
+  }
+  if (!info.supported)
+  {
+   fprintf (stderr, "ERROR: ATA Security not supported by this device.\n");
+   deviceClose (&device);
+   platformCleanup ();
+   return 1;
+  }
+  ata_erase_type_t eraseType = configuration.ataEnhancedErase ? ATA_ERASE_ENHANCED : ATA_ERASE_NORMAL;
+  int exitCode = ataSecureErase (&device, eraseType, progressHandler);
+  deviceClose (&device);
+  platformCleanup ();
+  return exitCode;
  }
 
  if (configuration.listDisks)

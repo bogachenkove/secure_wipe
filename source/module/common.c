@@ -7,6 +7,7 @@ size_t gBufferSectors = DEFAULT_BUFFER_SIZE / SECTOR_SIZE;
 logger_t gLogger = {NULL, false, ""};
 char gLogFilePath[MAX_PATH_LEN] = {0};
 bool gNoLog = false;
+uint8_t gDefaultRenameCount = 3;
 
 int bufferSetSize (size_t sizeBytes)
 {

@@ -67,7 +67,7 @@ static bool isPhysicalDriveMounted (int diskNumber)
    HANDLE currentVolume = CreateFileW (volumeName, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
    if (currentVolume != INVALID_HANDLE_VALUE)
    {
-	VOLUME_DISK_EXTENTS extents;
+	VOLUME_DISK_EXTENTS extents = {0};
 	bytesReturned = 0;
 	if (DeviceIoControl (currentVolume, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, &extents, sizeof (extents), &bytesReturned, NULL))
 	{

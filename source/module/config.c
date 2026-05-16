@@ -21,4 +21,8 @@ void configDefault (program_config_t *config)
 
  config->ataSecureErase = false;
  config->ataEnhancedErase = false;
+
+ config->wipeFileMode = false;
+ config->wipeDirMode = false;
+ config->wipeFilePath[0] = '\0';
 }

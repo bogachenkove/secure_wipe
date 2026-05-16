@@ -8,7 +8,7 @@
 #include <errno.h>
 
 #define SECURE_WIPE_NAME "Secure Wipe"
-#define SECURE_WIPE_VERSION "2.0.9.1"
+#define SECURE_WIPE_VERSION "2.0.10.0"
 #define SECURE_WIPE_DESCRIPTION "Data Destruction Tool"
 #define SECURE_WIPE_AUTHOR "Bogachenko Vyacheslav"
 #define SECURE_WIPE_CONTACT "bogachenkove@outlook.com"
@@ -76,6 +76,11 @@ void printUsage (const char *programName)
  printf ("  --analyze-write       Analysis with write test (destroys data!)\n");
  printf ("  --wp-check            Quick write-protection check\n");
  printf ("  --destroy-partition-table   Destroy MBR/GPT only (zero out, no data wipe)\n");
+ printf ("\nFile and Directory Wiping:\n");
+ printf ("  --wipe-file <path>    Securely wipe a single file\n");
+ printf ("  --wipe-dir <path>     Securely wipe a directory recursively\n");
+ printf ("  --rename-count <N>    Number of renames before deletion (default 3)\n");
+ printf ("  --no-rename           Disable renaming before deletion\n");
  printf ("\nLogging Options:\n");
  printf ("  --log FILE            Write log to specified file\n");
  printf ("  --no-log              Disable log file creation\n");
@@ -379,6 +384,54 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
    config->ataEnhancedErase = true;
    config->analyzeOnly = true;
   }
+  else if (strcmp (argv[argIndex], "--wipe-file") == 0)
+  {
+   if (argIndex + 1 < argc)
+   {
+	config->wipeFileMode = true;
+	snprintf (config->wipeFilePath, sizeof (config->wipeFilePath), "%s", argv[++argIndex]);
+   }
+   else
+   {
+	fprintf (stderr, "ERROR: --wipe-file requires a file path\n");
+	return false;
+   }
+  }
+  else if (strcmp (argv[argIndex], "--wipe-dir") == 0)
+  {
+   if (argIndex + 1 < argc)
+   {
+	config->wipeDirMode = true;
+	snprintf (config->wipeFilePath, sizeof (config->wipeFilePath), "%s", argv[++argIndex]);
+   }
+   else
+   {
+	fprintf (stderr, "ERROR: --wipe-dir requires a directory path\n");
+	return false;
+   }
+  }
+  else if (strcmp (argv[argIndex], "--rename-count") == 0)
+  {
+   if (argIndex + 1 < argc)
+   {
+	int count = atoi (argv[++argIndex]);
+	if (count < 0 || count > 255)
+	{
+	 fprintf (stderr, "ERROR: --rename-count must be between 0 and 255\n");
+	 return false;
+	}
+	gDefaultRenameCount = (uint8_t) count;
+   }
+   else
+   {
+	fprintf (stderr, "ERROR: --rename-count requires a number\n");
+	return false;
+   }
+  }
+  else if (strcmp (argv[argIndex], "--no-rename") == 0)
+  {
+   gDefaultRenameCount = 0;
+  }
   else if (argv[argIndex][0] != '-')
   {
    snprintf (config->devicePath, sizeof (config->devicePath), "%s", argv[argIndex]);
@@ -398,13 +451,11 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
    config->bufferGiven = true;
    LOG_INFO ("Emergency mode: using default buffer size %zu bytes", gBufferSize);
   }
-
   if (config->blockGiven && config->emergencySectors != 0)
   {
    fprintf (stderr, "ERROR: --emergency cannot use both --sector and --block. Choose one. See --help.\n");
    return false;
   }
-
   if (config->blockGiven)
   {
    size_t bytesPerBlock = config->bufferSize;
@@ -425,20 +476,17 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
   {
    LOG_INFO ("Emergency mode: full disk zeroing (no sector/block limit)");
   }
-
   if (config->listDisks || config->selectDisk || config->analyzeOnly || config->destroyPartitionTable || config->quickWpCheck || config->skipAnalysis)
   {
    fprintf (stderr, "ERROR: --emergency is incompatible with other operation flags (--list, --select, --analyze, --destroy-partition-table, "
 					"--wp-check, --skip-analysis). See --help.\n");
    return false;
   }
-
   if (config->cycles > 1)
   {
    fprintf (stderr, "ERROR: --cycle cannot be used with --emergency. See --help.\n");
    return false;
   }
-
   if (strlen (config->devicePath) == 0)
   {
    fprintf (stderr, "ERROR: --emergency requires a device path. See --help.\n");

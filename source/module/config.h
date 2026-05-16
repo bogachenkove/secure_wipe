@@ -30,6 +30,10 @@ typedef struct
 
  bool ataSecureErase;
  bool ataEnhancedErase;
+
+ bool wipeFileMode;
+ bool wipeDirMode;
+ char wipeFilePath[MAX_PATH_LEN];
 } program_config_t;
 
 void configDefault (program_config_t *config);

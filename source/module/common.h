@@ -70,6 +70,7 @@ typedef struct
 extern logger_t gLogger;
 extern char gLogFilePath[MAX_PATH_LEN];
 extern bool gNoLog;
+extern uint8_t gDefaultRenameCount;
 
 void logInit (const char *logPath, bool verbose);
 void logClose (void);
