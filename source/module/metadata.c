@@ -8,7 +8,7 @@
 #include <errno.h>
 
 #define SECURE_WIPE_NAME "Secure Wipe"
-#define SECURE_WIPE_VERSION "2.0.9.0"
+#define SECURE_WIPE_VERSION "2.0.9.1"
 #define SECURE_WIPE_DESCRIPTION "Data Destruction Tool"
 #define SECURE_WIPE_AUTHOR "Bogachenko Vyacheslav"
 #define SECURE_WIPE_CONTACT "bogachenkove@outlook.com"
@@ -46,28 +46,6 @@ void printMethods (void)
  printf ("Available wipe methods:\n\n");
  printf ("  Zero        : 1 pass of zeros (0x00)\n");
  printf ("  Random      : N passes of cryptographically secure random data\n");
- printf ("  DoD short   : DoD 5220.22-M (3 passes: 0x00, 0xFF, random)\n");
- printf ("  DoD full    : DoD 5220.22-M ECE (7 passes extended)\n");
- printf ("  Schneier    : Bruce Schneier Algorithm (7 passes: 0xFF, 0x00, 5x random)\n");
- printf ("  Gutmann     : Peter Gutmann Method (35 passes, MFM/RLL patterns + random)\n");
- printf ("  AFSSI-5020  : U.S. Air Force AFSSI-5020 (3 passes: 0x00, 0xFF, random)\n");
- printf ("  NIST Clear  : NIST SP-800-88 Rev. 1 Clear (1 pass of zeros)\n");
- printf ("  NIST Purge  : NIST SP-800-88 Rev. 1 Purge (3 passes: random, 0x00, random)\n");
- printf ("  BSI-VSITR   : German BSI standard (7 passes: 0x00,0xFF,0x00,0xFF,0x00,0xFF,random)\n");
- printf ("  RCMP TSSIT  : Canadian RCMP TSSIT OPS-II (7 passes)\n");
- printf ("  HMG IS5 Base: HMG Infosec Standard 5 Baseline (1 pass: zeros, then random)\n");
- printf ("  HMG IS5 Enh : HMG Infosec Standard 5 Enhanced (3 passes: 0x00, 0xFF, random)\n");
- printf ("  GOST 50739-95: Russian State Standard (2 passes: zeros, then random)\n");
- printf ("  NAVSO P-5239-26: US Navy standard (3 passes: 0x00, 0xFF, random)\n");
- printf ("  ISM 6.2.92   : Australian Government ISM (3 passes: 0x00, 0xFF, random)\n");
- printf ("  NAP-14.1-C   : Spanish standard (3 passes: 0x00, 0xFF, 0x00)\n");
- printf ("  Pfitzner 7   : Pfitzner Method (7 passes of random data + verify each)\n");
- printf ("  Pfitzner 33  : Pfitzner Method (33 passes of random data + verify each)\n");
- printf ("\nNotes:\n");
- printf ("  - NIST Clear is suitable for media reuse within organization\n");
- printf ("  - NIST Purge provides stronger sanitization for external release\n");
- printf ("  - AFSSI-5020 is equivalent to DoD short method\n");
- printf ("  - Gutmann method is designed for older MFM/RLL drives\n");
 }
 
 void printUsage (const char *programName)
@@ -88,23 +66,6 @@ void printUsage (const char *programName)
  printf ("\nWipe Methods:\n");
  printf ("  --zero                Zero fill (1 pass)\n");
  printf ("  --random N            Random data (N passes)\n");
- printf ("  --dod-short           DoD 5220.22-M short (3 passes)\n");
- printf ("  --dod-full            DoD 5220.22-M ECE (7 passes)\n");
- printf ("  --schneier            Bruce Schneier Algorithm (7 passes)\n");
- printf ("  --gutmann             Gutmann method (35 passes)\n");
- printf ("  --afssi               AFSSI-5020 (3 passes)\n");
- printf ("  --nist-clear          NIST SP-800-88 Clear (1 pass)\n");
- printf ("  --nist-purge          NIST SP-800-88 Purge (3 passes)\n");
- printf ("  --bsi-vsitr           BSI-VSITR (7 passes)\n");
- printf ("  --rcmp-tssit          RCMP TSSIT OPS-II (7 passes)\n");
- printf ("  --hmg-is5-baseline    HMG IS5 Baseline (2 passes)\n");
- printf ("  --hmg-is5-enhanced    HMG IS5 Enhanced (3 passes)\n");
- printf ("  --gost-50739-95       GOST R 50739-95 (2 passes)\n");
- printf ("  --navso-p5239-26      NAVSO P-5239-26 (3 passes)\n");
- printf ("  --ism-6.2.92          ISM 6.2.92 (3 passes)\n");
- printf ("  --nap-14.1-c          NAP-14.1-C (3 passes)\n");
- printf ("  --pfitzner-7          Pfitzner 7-pass (7x random + verify)\n");
- printf ("  --pfitzner-33         Pfitzner 33-pass (33x random + verify)\n");
  printf ("\nATA Security Commands:\n");
  printf ("  --ata-erase           Perform ATA Secure Erase (normal)\n");
  printf ("  --ata-enhanced-erase  Perform ATA Enhanced Secure Erase\n");
@@ -166,7 +127,7 @@ void printLicense (void)
  }
  else
  {
-  printf ("License file not found locally.\n");
+  printf ("License file not found locally in the " SECURE_WIPE_LICENSE_FILE " directory.\n");
   printf ("Please read the license agreement online:\n");
   printf ("https://raw.githubusercontent.com/bogachenkove/securewipe/stable/%s\n", SECURE_WIPE_LICENSE_FILE);
  }
@@ -270,91 +231,6 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
 	fprintf (stderr, "ERROR: --random requires a number of passes (e.g., --random 3). See --help.\n");
 	return false;
    }
-  }
-  else if (strcmp (argv[argIndex], "--dod-short") == 0)
-  {
-   config->method = WIPE_METHOD_DOD_SHORT;
-   config->passes = 3;
-  }
-  else if (strcmp (argv[argIndex], "--dod-full") == 0)
-  {
-   config->method = WIPE_METHOD_DOD_FULL;
-   config->passes = 7;
-  }
-  else if (strcmp (argv[argIndex], "--schneier") == 0)
-  {
-   config->method = WIPE_METHOD_SCHNEIER;
-   config->passes = 7;
-  }
-  else if (strcmp (argv[argIndex], "--gutmann") == 0)
-  {
-   config->method = WIPE_METHOD_GUTMANN;
-   config->passes = 35;
-  }
-  else if (strcmp (argv[argIndex], "--afssi-5020") == 0)
-  {
-   config->method = WIPE_METHOD_AFSSI_5020;
-   config->passes = 3;
-  }
-  else if (strcmp (argv[argIndex], "--nist-clear") == 0)
-  {
-   config->method = WIPE_METHOD_NIST_CLEAR;
-   config->passes = 1;
-  }
-  else if (strcmp (argv[argIndex], "--nist-purge") == 0)
-  {
-   config->method = WIPE_METHOD_NIST_PURGE;
-   config->passes = 3;
-  }
-  else if (strcmp (argv[argIndex], "--bsi-vsitr") == 0)
-  {
-   config->method = WIPE_METHOD_BSI_VSITR;
-   config->passes = 7;
-  }
-  else if (strcmp (argv[argIndex], "--rcmp-tssit") == 0)
-  {
-   config->method = WIPE_METHOD_RCMP_TSSIT_OPSII;
-   config->passes = 7;
-  }
-  else if (strcmp (argv[argIndex], "--hmg-is5-baseline") == 0)
-  {
-   config->method = WIPE_METHOD_HMG_IS5_BASELINE;
-   config->passes = 2;
-  }
-  else if (strcmp (argv[argIndex], "--hmg-is5-enhanced") == 0)
-  {
-   config->method = WIPE_METHOD_HMG_IS5_ENHANCED;
-   config->passes = 3;
-  }
-  else if (strcmp (argv[argIndex], "--gost-50739-95") == 0)
-  {
-   config->method = WIPE_METHOD_GOST_50739_95;
-   config->passes = 2;
-  }
-  else if (strcmp (argv[argIndex], "--navso-p5239-26") == 0)
-  {
-   config->method = WIPE_METHOD_NAVSO_P5239_26;
-   config->passes = 3;
-  }
-  else if (strcmp (argv[argIndex], "--ism-6.2.92") == 0)
-  {
-   config->method = WIPE_METHOD_ISM_6_2_92;
-   config->passes = 3;
-  }
-  else if (strcmp (argv[argIndex], "--nap-14.1-c") == 0)
-  {
-   config->method = WIPE_METHOD_NAP_14_1_C;
-   config->passes = 3;
-  }
-  else if (strcmp (argv[argIndex], "--pfitzner-7") == 0)
-  {
-   config->method = WIPE_METHOD_PFITZNER_7;
-   config->passes = 7;
-  }
-  else if (strcmp (argv[argIndex], "--pfitzner-33") == 0)
-  {
-   config->method = WIPE_METHOD_PFITZNER_33;
-   config->passes = 33;
   }
   else if (strcmp (argv[argIndex], "-b") == 0 || strcmp (argv[argIndex], "--buffer") == 0)
   {
