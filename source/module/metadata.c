@@ -8,7 +8,7 @@
 #include <errno.h>
 
 #define SECURE_WIPE_NAME "Secure Wipe"
-#define SECURE_WIPE_VERSION "2.0.8.0"
+#define SECURE_WIPE_VERSION "2.0.9.0"
 #define SECURE_WIPE_DESCRIPTION "Data Destruction Tool"
 #define SECURE_WIPE_AUTHOR "Bogachenko Vyacheslav"
 #define SECURE_WIPE_CONTACT "bogachenkove@outlook.com"
@@ -105,6 +105,10 @@ void printUsage (const char *programName)
  printf ("  --nap-14.1-c          NAP-14.1-C (3 passes)\n");
  printf ("  --pfitzner-7          Pfitzner 7-pass (7x random + verify)\n");
  printf ("  --pfitzner-33         Pfitzner 33-pass (33x random + verify)\n");
+ printf ("\nATA Security Commands:\n");
+ printf ("  --ata-erase           Perform ATA Secure Erase (normal)\n");
+ printf ("  --ata-enhanced-erase  Perform ATA Enhanced Secure Erase\n");
+ printf ("  Note: Requires --device, incompatible with other wipe methods\n");
  printf ("\nAnalysis Options:\n");
  printf ("  --analyze             Read-only analysis (no wiping)\n");
  printf ("  --skip-analysis       Skip analysis and proceed directly to wipe\n");
@@ -487,6 +491,18 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
   {
    config->emergencyMode = true;
   }
+  else if (strcmp (argv[argIndex], "--ata-erase") == 0)
+  {
+   config->ataSecureErase = true;
+   config->ataEnhancedErase = false;
+   config->analyzeOnly = true;
+  }
+  else if (strcmp (argv[argIndex], "--ata-enhanced-erase") == 0)
+  {
+   config->ataSecureErase = true;
+   config->ataEnhancedErase = true;
+   config->analyzeOnly = true;
+  }
   else if (argv[argIndex][0] != '-')
   {
    snprintf (config->devicePath, sizeof (config->devicePath), "%s", argv[argIndex]);
@@ -552,6 +568,12 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
    fprintf (stderr, "ERROR: --emergency requires a device path. See --help.\n");
    return false;
   }
+ }
+
+ if (config->ataSecureErase && strlen (config->devicePath) == 0)
+ {
+  fprintf (stderr, "ERROR: --ata-erase requires a device path.\n");
+  return false;
  }
 
  return true;

@@ -27,6 +27,9 @@ typedef struct
  uint64_t blockCount;
  bool blockGiven;
  bool bufferGiven;
+
+ bool ataSecureErase;
+ bool ataEnhancedErase;
 } program_config_t;
 
 void configDefault (program_config_t *config);

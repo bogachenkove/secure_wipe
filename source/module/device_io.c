@@ -91,7 +91,6 @@ static error_code_t winDeviceReadSectors (device_t *device, uint64_t startSector
   return ERR_READ_DEVICE;
  if (bytesRead != bytesToRead)
   return ERR_READ_DEVICE;
-
  return ERR_OK;
 }
 
@@ -119,7 +118,6 @@ static error_code_t winDeviceWriteSectors (device_t *device, uint64_t startSecto
  }
  if (bytesWritten != bytesToWrite)
   return ERR_WRITE_DEVICE;
-
  return ERR_OK;
 }
 
@@ -231,7 +229,6 @@ static error_code_t posixDeviceReadSectors (device_t *device, uint64_t startSect
  ssize_t bytesRead = read (device->handle, buffer, bytesToRead);
  if (bytesRead < 0 || (size_t) bytesRead != bytesToRead)
   return ERR_READ_DEVICE;
-
  return ERR_OK;
 }
 
@@ -248,7 +245,6 @@ static error_code_t posixDeviceWriteSectors (device_t *device, uint64_t startSec
  ssize_t bytesWritten = write (device->handle, buffer, bytesToWrite);
  if (bytesWritten < 0 || (size_t) bytesWritten != bytesToWrite)
   return ERR_WRITE_DEVICE;
-
  return ERR_OK;
 }
 

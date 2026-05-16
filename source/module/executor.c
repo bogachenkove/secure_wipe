@@ -5,8 +5,9 @@
 #include "disk_scanner.h"
 #include "platform.h"
 #include "ui.h"
+#include "ata_erase.h"
 
-static error_code_t runSingleCycle (const program_config_t *config, analysis_result_t *analysis, int cycleNum)
+static error_code_t runSingleCycle (const program_config_t *config, analysis_result_t *analysis, int cycleNumber)
 {
  device_t *device = NULL;
  extended_analysis_result_t *extendedAnalysis = NULL;
@@ -14,7 +15,7 @@ static error_code_t runSingleCycle (const program_config_t *config, analysis_res
  wipe_config_t *wipeConfig = NULL;
  wipe_stats_t *wipeStats = NULL;
  error_code_t wipeError = ERR_OK;
- error_code_t result = ERR_OK;
+ error_code_t resultCode = ERR_OK;
  bool useExtended = config->analyzeWriteTest || config->quickWpCheck;
  bool analysisInitialized = false;
  bool extendedAnalysisInitialized = false;
@@ -28,19 +29,65 @@ static error_code_t runSingleCycle (const program_config_t *config, analysis_res
  if (!device || !extendedAnalysis || !diskInfo || !wipeConfig || !wipeStats)
  {
   LOG_ERROR ("Memory allocation failed");
-  result = ERR_MEMORY;
+  resultCode = ERR_MEMORY;
   goto cleanup;
  }
 
  if (diskScannerGetInfo (config->devicePath, diskInfo) == ERR_OK)
  {
-  if (cycleNum == 1)
+  if (cycleNumber == 1)
    diskScannerPrintDetail (diskInfo);
   if (!config->destroyPartitionTable && (diskInfo->isSystem || diskInfo->isBoot))
   {
    fprintf (stderr, "\n*** CRITICAL: System disk - operation aborted.\n");
-   result = ERR_PERMISSION;
+   resultCode = ERR_PERMISSION;
    goto cleanup;
+  }
+ }
+
+ if (cycleNumber == 1 && !config->destroyPartitionTable && !config->skipAnalysis && !config->analyzeOnly && !useExtended)
+ {
+  device_t ataDevice;
+  error_code_t openStatus = deviceOpen (&ataDevice, config->devicePath, false);
+  if (openStatus == ERR_OK)
+  {
+   ata_security_info_t ataInfo;
+   if (ataGetSecurityInfo (&ataDevice, &ataInfo) == ERR_OK && ataInfo.supported)
+   {
+	if (promptAtaErase (&ataInfo, config->devicePath))
+	{
+	 ata_erase_type_t eraseType = ATA_ERASE_NORMAL;
+	 if (ataInfo.enhancedSupported)
+	 {
+	  printf ("Choose erase type (1=Enhanced, 2=Normal) [2]: ");
+	  fflush (stdout);
+	  char input[16];
+	  if (fgets (input, sizeof (input), stdin))
+	  {
+	   if (atoi (input) == 1)
+		eraseType = ATA_ERASE_ENHANCED;
+	  }
+	 }
+	 printf ("\nStarting ATA Secure Erase...\n");
+	 error_code_t ataResult = ataSecureErase (&ataDevice, eraseType, progressHandler);
+	 deviceClose (&ataDevice);
+	 if (ataResult == ERR_OK)
+	 {
+	  printf ("\nATA Secure Erase completed successfully.\n");
+	  resultCode = ERR_OK;
+	  goto cleanup;
+	 }
+	 else
+	 {
+	  printf ("\nATA Secure Erase failed (error: %s). Falling back to software wipe.\n", errorToString (ataResult));
+	 }
+	}
+   }
+   deviceClose (&ataDevice);
+  }
+  else
+  {
+   LOG_WARN ("Could not open device for ATA security check (will use software wipe)");
   }
  }
 
@@ -48,7 +95,7 @@ static error_code_t runSingleCycle (const program_config_t *config, analysis_res
  if (deviceOpen (device, config->devicePath, !needWriteAccess) != ERR_OK)
  {
   LOG_ERROR ("Failed to open device");
-  result = ERR_OPEN_DEVICE;
+  resultCode = ERR_OPEN_DEVICE;
   goto cleanup;
  }
 
@@ -56,7 +103,7 @@ static error_code_t runSingleCycle (const program_config_t *config, analysis_res
  {
   LOG_ERROR ("Device %s is currently mounted. Unmount it first.", config->devicePath);
   deviceClose (device);
-  result = ERR_PERMISSION;
+  resultCode = ERR_PERMISSION;
   goto cleanup;
  }
 
@@ -67,9 +114,7 @@ static error_code_t runSingleCycle (const program_config_t *config, analysis_res
   if (diskInfo->isSystem == false && diskInfo->isBoot == false && diskInfo->devicePath[0] == '\0')
   {
    if (diskScannerGetInfo (config->devicePath, &localDiskInfo) == ERR_OK)
-   {
 	memcpy (diskInfo, &localDiskInfo, sizeof (disk_info_t));
-   }
   }
   if (diskInfo->isSystem || diskInfo->isBoot)
   {
@@ -87,7 +132,7 @@ static error_code_t runSingleCycle (const program_config_t *config, analysis_res
   {
    printf ("Operation cancelled.\n");
    deviceClose (device);
-   result = ERR_PERMISSION;
+   resultCode = ERR_PERMISSION;
    goto cleanup;
   }
   error_code_t errorCode = wiperZeroPartitionTable (device);
@@ -96,7 +141,7 @@ static error_code_t runSingleCycle (const program_config_t *config, analysis_res
    printf ("Partition table destroyed successfully.\n");
   else
    printf ("Failed to destroy partition table (error: %s).\n", errorToString (errorCode));
-  result = (errorCode == ERR_OK) ? ERR_OK : errorCode;
+  resultCode = (errorCode == ERR_OK) ? ERR_OK : errorCode;
   goto cleanup;
  }
 
@@ -116,7 +161,7 @@ static error_code_t runSingleCycle (const program_config_t *config, analysis_res
   if (config->analyzeOnly && !config->analyzeWriteTest)
   {
    deviceClose (device);
-   goto after_analysis;
+   goto afterAnalysis;
   }
  }
 
@@ -124,7 +169,7 @@ static error_code_t runSingleCycle (const program_config_t *config, analysis_res
  {
   LOG_INFO ("Skipping device analysis (--skip-analysis)");
   deviceClose (device);
-  goto after_analysis;
+  goto afterAnalysis;
  }
 
  if (useExtended)
@@ -133,7 +178,7 @@ static error_code_t runSingleCycle (const program_config_t *config, analysis_res
   {
    LOG_ERROR ("Init extended analysis failed");
    deviceClose (device);
-   result = ERR_MEMORY;
+   resultCode = ERR_MEMORY;
    goto cleanup;
   }
   extendedAnalysisInitialized = true;
@@ -144,7 +189,7 @@ static error_code_t runSingleCycle (const program_config_t *config, analysis_res
   {
    LOG_ERROR ("Init analysis failed");
    deviceClose (device);
-   result = ERR_MEMORY;
+   resultCode = ERR_MEMORY;
    goto cleanup;
   }
   analysisInitialized = true;
@@ -160,7 +205,7 @@ static error_code_t runSingleCycle (const program_config_t *config, analysis_res
   {
    LOG_ERROR ("Extended analysis failed");
    deviceClose (device);
-   result = ERR_READ_DEVICE;
+   resultCode = ERR_READ_DEVICE;
    goto cleanup;
   }
   analyzerPrintExtendedReport (extendedAnalysis);
@@ -172,7 +217,7 @@ static error_code_t runSingleCycle (const program_config_t *config, analysis_res
   {
    LOG_ERROR ("Device analysis failed");
    deviceClose (device);
-   result = ERR_READ_DEVICE;
+   resultCode = ERR_READ_DEVICE;
    goto cleanup;
   }
   analyzerPrintReport (analysis);
@@ -182,36 +227,36 @@ static error_code_t runSingleCycle (const program_config_t *config, analysis_res
  {
   printf ("Analysis complete. Exiting.\n");
   deviceClose (device);
-  goto after_analysis;
+  goto afterAnalysis;
  }
 
  deviceClose (device);
 
-after_analysis:
+afterAnalysis:
  uint32_t actualPasses;
  if (config->method == WIPE_METHOD_RANDOM)
   actualPasses = config->passes;
  else
   actualPasses = wiperMethodPasses (config->method);
 
- if (cycleNum == 1 && !config->autoConfirm && !confirmWipe (config->devicePath, analysis->totalBytes, config->method, actualPasses))
+ if (cycleNumber == 1 && !config->autoConfirm && !confirmWipe (config->devicePath, analysis->totalBytes, config->method, actualPasses))
  {
   printf ("Operation cancelled.\n");
-  result = ERR_PERMISSION;
+  resultCode = ERR_PERMISSION;
   goto cleanup;
  }
 
  if (deviceOpen (device, config->devicePath, false) != ERR_OK)
  {
   LOG_ERROR ("Failed to open device for writing");
-  result = ERR_OPEN_DEVICE;
+  resultCode = ERR_OPEN_DEVICE;
   goto cleanup;
  }
  if (isDeviceMounted (config->devicePath))
  {
   LOG_ERROR ("Device %s became mounted after open, aborting to avoid FS corruption.", config->devicePath);
   deviceClose (device);
-  result = ERR_PERMISSION;
+  resultCode = ERR_PERMISSION;
   goto cleanup;
  }
 
@@ -220,7 +265,7 @@ after_analysis:
  {
   LOG_ERROR ("Cannot allocate test buffer");
   deviceClose (device);
-  result = ERR_MEMORY;
+  resultCode = ERR_MEMORY;
   goto cleanup;
  }
  memset (testBuffer, 0xAA, SECTOR_SIZE);
@@ -229,7 +274,7 @@ after_analysis:
   LOG_ERROR ("Device write test failed. Device is write-protected or inaccessible.");
   alignedFree (testBuffer);
   deviceClose (device);
-  result = ERR_WRITE_DEVICE;
+  resultCode = ERR_WRITE_DEVICE;
   goto cleanup;
  }
  alignedFree (testBuffer);
@@ -254,13 +299,13 @@ after_analysis:
  {
   char timeString[64];
   formatTime (elapsedTime, timeString, sizeof (timeString));
-  printf ("\n--- Wipe complete (cycle %d) ---\nTime: %s\nSectors wiped: %llu\nPasses: %llu\n", cycleNum, timeString,
+  printf ("\n--- Wipe complete (cycle %d) ---\nTime: %s\nSectors wiped: %llu\nPasses: %llu\n", cycleNumber, timeString,
 		  (unsigned long long) wipeStats->sectorsWiped, (unsigned long long) wipeStats->totalPasses);
  }
  else
  {
   LOG_ERROR ("Wipe failed");
-  result = wipeError;
+  resultCode = wipeError;
  }
 
  if (config->verify && wipeError == ERR_OK)
@@ -276,7 +321,7 @@ after_analysis:
  }
 
  deviceClose (device);
- result = ERR_OK;
+ resultCode = ERR_OK;
 
 cleanup:
  if (useExtended && extendedAnalysisInitialized)
@@ -290,7 +335,7 @@ cleanup:
  free (wipeConfig);
  free (wipeStats);
 
- return (result == ERR_OK) ? ERR_OK : ERR_UNKNOWN;
+ return (resultCode == ERR_OK) ? ERR_OK : ERR_UNKNOWN;
 }
 
 int runWipe (const program_config_t *config, analysis_result_t *analysis)

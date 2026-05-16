@@ -18,4 +18,7 @@ void configDefault (program_config_t *config)
  config->blockCount = 0;
  config->blockGiven = false;
  config->bufferGiven = false;
+
+ config->ataSecureErase = false;
+ config->ataEnhancedErase = false;
 }

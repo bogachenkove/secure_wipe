@@ -50,6 +50,106 @@ void progressHandler (uint64_t current, uint64_t total, int pass, const char *ph
  }
 }
 
+bool promptAtaErase (const ata_security_info_t *info, const char *devicePath)
+{
+ printf ("\n=== ATA SECURITY FEATURES DETECTED ===\n");
+ printf ("Device: %s\n", devicePath);
+ printf ("Model:  %s\n", info->model);
+ printf ("Serial: %s\n", info->serial);
+ printf ("Firmware: %s\n", info->firmware);
+ printf ("\nThis device supports ATA Secure Erase");
+ if (info->enhancedSupported)
+  printf (" and Enhanced Secure Erase");
+ printf (".\n");
+ printf ("ATA Secure Erase is a built-in hardware command that\n");
+ printf ("can completely erase the drive in seconds/minutes,\n");
+ printf ("often faster and more thoroughly than software overwrite.\n");
+ printf ("\nDo you want to use ATA Secure Erase instead of the selected software method?\n");
+
+ if (info->enhancedSupported)
+ {
+  printf ("Choose option:\n");
+  printf ("  1) ATA Enhanced Secure Erase (most secure, if supported)\n");
+  printf ("  2) ATA Normal Secure Erase\n");
+  printf ("  3) Skip ATA Erase, use software method\n");
+  printf ("Enter choice (1-3) [3]: ");
+  fflush (stdout);
+  char input[16];
+  if (!fgets (input, sizeof (input), stdin))
+   return false;
+  int choice = atoi (input);
+  if (choice == 1)
+  {
+   printf ("\n--- ATA ENHANCED SECURE ERASE ---\n");
+   printf ("This will completely erase all data on %s.\n", devicePath);
+   printf ("Operation cannot be stopped once started.\n");
+   printf ("Type 'YES' (all caps) to confirm: ");
+   fflush (stdout);
+   char confirm[16];
+   if (!fgets (confirm, sizeof (confirm), stdin))
+	return false;
+   if (strcmp (confirm, "YES\n") != 0)
+   {
+	printf ("Operation cancelled.\n");
+	return false;
+   }
+   return true;
+  }
+  else if (choice == 2)
+  {
+   printf ("\n--- ATA NORMAL SECURE ERASE ---\n");
+   printf ("This will completely erase all data on %s.\n", devicePath);
+   printf ("Operation cannot be stopped once started.\n");
+   printf ("Type 'YES' (all caps) to confirm: ");
+   fflush (stdout);
+   char confirm[16];
+   if (!fgets (confirm, sizeof (confirm), stdin))
+	return false;
+   if (strcmp (confirm, "YES\n") != 0)
+   {
+	printf ("Operation cancelled.\n");
+	return false;
+   }
+   return true;
+  }
+  else
+  {
+   printf ("Skipping ATA Erase.\n");
+   return false;
+  }
+ }
+ else
+ {
+  printf ("Do you want to perform ATA Secure Erase? (y/n): ");
+  fflush (stdout);
+  char input[16];
+  if (!fgets (input, sizeof (input), stdin))
+   return false;
+  if (input[0] == 'y' || input[0] == 'Y')
+  {
+   printf ("\n--- ATA SECURE ERASE ---\n");
+   printf ("This will completely erase all data on %s.\n", devicePath);
+   printf ("Operation cannot be stopped once started.\n");
+   printf ("Type 'YES' (all caps) to confirm: ");
+   fflush (stdout);
+   char confirm[16];
+   if (!fgets (confirm, sizeof (confirm), stdin))
+	return false;
+   if (strcmp (confirm, "YES\n") != 0)
+   {
+	printf ("Operation cancelled.\n");
+	return false;
+   }
+   return true;
+  }
+  else
+  {
+   printf ("Skipping ATA Erase.\n");
+   return false;
+  }
+ }
+}
+
 bool interactiveSelectDisk (program_config_t *config)
 {
  disk_scan_result_t *scanResult = (disk_scan_result_t *) malloc (sizeof (disk_scan_result_t));

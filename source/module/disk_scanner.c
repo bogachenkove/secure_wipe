@@ -227,9 +227,9 @@ error_code_t diskScannerGetInfo (const char *devicePath, disk_info_t *info)
 #include <sys/sysmacros.h>
 #include <mntent.h>
 
-static bool readSysfsString (const char *path, char *outputBuffer, size_t bufferSize)
+static bool readSysfsString (const char *filePath, char *outputBuffer, size_t bufferSize)
 {
- FILE *file = fopen (path, "r");
+ FILE *file = fopen (filePath, "r");
  if (!file)
   return false;
  if (fgets (outputBuffer, (int) bufferSize, file) != NULL)
@@ -244,18 +244,19 @@ static bool readSysfsString (const char *path, char *outputBuffer, size_t buffer
  return false;
 }
 
-static uint64_t readSysfsUint64 (const char *path)
+static uint64_t readSysfsUint64 (const char *filePath)
 {
  char valueBuffer[64];
- if (readSysfsString (path, valueBuffer, sizeof (valueBuffer)))
+ if (readSysfsString (filePath, valueBuffer, sizeof (valueBuffer)))
   return strtoull (valueBuffer, NULL, 10);
  return 0;
 }
 
 static disk_type_t detectDiskTypeLinux (const char *deviceName)
 {
- char path[512];
+ char sysPath[512];
  char tempBuffer[256];
+
  if (strncmp (deviceName, "nvme", 4) == 0)
   return DISK_TYPE_NVME;
  if (strncmp (deviceName, "mmcblk", 6) == 0)
@@ -263,17 +264,17 @@ static disk_type_t detectDiskTypeLinux (const char *deviceName)
  if (strncmp (deviceName, "sr", 2) == 0)
   return DISK_TYPE_OPTICAL;
 
- snprintf (path, sizeof (path), "/sys/block/%s/removable", deviceName);
- if (readSysfsString (path, tempBuffer, sizeof (tempBuffer)) && tempBuffer[0] == '1')
+ snprintf (sysPath, sizeof (sysPath), "/sys/block/%s/removable", deviceName);
+ if (readSysfsString (sysPath, tempBuffer, sizeof (tempBuffer)) && tempBuffer[0] == '1')
   return DISK_TYPE_USB;
 
- snprintf (path, sizeof (path), "/sys/block/%s/device/../../driver", deviceName);
+ snprintf (sysPath, sizeof (sysPath), "/sys/block/%s/device/../../driver", deviceName);
  char resolved[PATH_MAX];
- if (realpath (path, resolved) && strstr (resolved, "usb"))
+ if (realpath (sysPath, resolved) && strstr (resolved, "usb"))
   return DISK_TYPE_USB;
 
- snprintf (path, sizeof (path), "/sys/block/%s/queue/rotational", deviceName);
- if (readSysfsString (path, tempBuffer, sizeof (tempBuffer)))
+ snprintf (sysPath, sizeof (sysPath), "/sys/block/%s/queue/rotational", deviceName);
+ if (readSysfsString (sysPath, tempBuffer, sizeof (tempBuffer)))
   return (tempBuffer[0] == '0') ? DISK_TYPE_SSD : DISK_TYPE_HDD;
 
  return DISK_TYPE_UNKNOWN;
@@ -333,29 +334,29 @@ error_code_t diskScannerScan (disk_scan_result_t *result)
   memset (info, 0, sizeof (disk_info_t));
   snprintf (info->devicePath, sizeof (info->devicePath), "/dev/%s", entry->d_name);
 
-  char path[512];
-  snprintf (path, sizeof (path), "/sys/block/%s/size", entry->d_name);
-  uint64_t sectorCount = readSysfsUint64 (path);
+  char sysPath[512];
+  snprintf (sysPath, sizeof (sysPath), "/sys/block/%s/size", entry->d_name);
+  uint64_t sectorCount = readSysfsUint64 (sysPath);
   info->sizeBytes = sectorCount * 512;
   if (info->sizeBytes == 0)
    continue;
 
-  snprintf (path, sizeof (path), "/sys/block/%s/queue/hw_sector_size", entry->d_name);
-  info->sectorSize = (uint32_t) readSysfsUint64 (path);
+  snprintf (sysPath, sizeof (sysPath), "/sys/block/%s/queue/hw_sector_size", entry->d_name);
+  info->sectorSize = (uint32_t) readSysfsUint64 (sysPath);
   if (info->sectorSize == 0)
    info->sectorSize = 512;
 
   info->type = detectDiskTypeLinux (entry->d_name);
 
-  snprintf (path, sizeof (path), "/sys/block/%s/removable", entry->d_name);
+  snprintf (sysPath, sizeof (sysPath), "/sys/block/%s/removable", entry->d_name);
   char removableBuffer[8];
-  if (readSysfsString (path, removableBuffer, sizeof (removableBuffer)))
+  if (readSysfsString (sysPath, removableBuffer, sizeof (removableBuffer)))
    info->isRemovable = (removableBuffer[0] == '1');
 
-  snprintf (path, sizeof (path), "/sys/block/%s/device/vendor", entry->d_name);
-  readSysfsString (path, info->vendor, sizeof (info->vendor));
-  snprintf (path, sizeof (path), "/sys/block/%s/device/model", entry->d_name);
-  readSysfsString (path, info->model, sizeof (info->model));
+  snprintf (sysPath, sizeof (sysPath), "/sys/block/%s/device/vendor", entry->d_name);
+  readSysfsString (sysPath, info->vendor, sizeof (info->vendor));
+  snprintf (sysPath, sizeof (sysPath), "/sys/block/%s/device/model", entry->d_name);
+  readSysfsString (sysPath, info->model, sizeof (info->model));
 
   if (info->type == DISK_TYPE_USB)
    snprintf (info->busType, sizeof (info->busType), "USB");
