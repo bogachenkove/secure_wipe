@@ -1,4 +1,4 @@
-Secure Wipe v2.0.10.0
+Secure Wipe v2.0.11.0
 Data Destruction Tool
 
 DESCRIPTION
@@ -44,73 +44,73 @@ OPTIONS
     --version, --about, --license, --support, --help, --methods
 
   Disk discovery:
-    -L, --list-storage               List storage devices
-    -S, --select-storage             Interactive storage device selection
-    -A, --show-system-storage        Show all devices (including system disks)
+    -L, --list-storage			List storage devices
+    -S, --select-storage		Interactive storage device selection
+    -A, --all-storage			Show all devices (including system disks)
 
   Wipe methods (software overwrite):
-    --zero                           Zero fill (1 pass)
-    --random N                       Random data (N passes, 1‑100)
+    --zero				Zero fill (1 pass)
+    --random N				Random data (N passes, 1‑100)
 
   ATA Security Commands (hardware erase):
-    --ata-erase                      Perform ATA Secure Erase (normal)
-    --ata-enhanced-erase             Perform ATA Enhanced Secure Erase
+    --ata-erase				Perform ATA Secure Erase (normal)
+    --ata-enhanced-erase		Perform ATA Enhanced Secure Erase
     Note: Requires a device path, incompatible with other wipe methods
 
   File and Directory Wiping:
-    --wipe-file <path>               Securely wipe a single file
-    --wipe-dir <path>                Securely wipe a directory recursively
-    --rename-count <N>               Number of renames before deletion (default 3, 0‑255)
-    --no-rename                      Disable renaming before deletion
+    --wipe-file <path>			Securely wipe a single file
+    --wipe-dir <path>			Securely wipe a directory recursively
+    --rename-count <N>			Number of renames before deletion (default 3, 0‑255)
+    --no-rename				Disable renaming before deletion
 
   Analysis:
-    --analyze                        Read‑only analysis (bad sectors, readability)
-    --analyze-write                  Write test analysis (destroys data!)
-    --wp-check                       Quick write‑protection check (first 8 MB)
-    --skip-analysis                  Skip pre‑wipe analysis and proceed directly to wipe
+    --analyze				Read‑only analysis (bad sectors, readability)
+    --analyze-write			Write test analysis (destroys data!)
+    --wp-check				Quick write‑protection check (first 8 MB)
+    --skip-analysis			Skip pre‑wipe analysis and proceed directly to wipe
 
   Partition table:
-    --destroy-partition-table        Zero MBR/GPT only (first 34 and last 33 sectors, no data wipe)
+    --destroy-partition-table		Zero MBR/GPT only (first 34 and last 33 sectors, no data wipe)
 
   Emergency mode (zero‑write only, no full wipe):
-    --emergency                      Enable emergency zero‑write mode
-    --sector N                       Number of sectors to overwrite (must be >0)
-    --block N                        Number of blocks to overwrite (block size = --buffer)
-    -b, --buffer SIZE                I/O buffer size (optional, default = 512KB)
+    --emergency				Enable emergency zero‑write mode
+    --sector N				Number of sectors to overwrite (must be >0)
+    --block N				Number of blocks to overwrite (block size = --buffer)
+    -b, --buffer SIZE			I/O buffer size (optional, default = 512KB)
     (If neither --sector nor --block is given, the entire device is zeroed)
 
   Logging:
-    --log FILE                       Write log to specified file (default: timestamped file in TEMP)
-    --no-log                         Disable log file creation
+    --log FILE				Write log to specified file (default: timestamped file in TEMP)
+    --no-log				Disable log file creation
 
   Other:
-    -b, --buffer SIZE                I/O buffer size (e.g. 1MB, 512KB)
-    -v, --verify                     Verify after wipe (default)
-    -n, --no-verify                  Skip verification
-    -y, --yes                        Auto‑confirm (dangerous)
-    -q, --quiet                      Quiet mode (less verbose)
-    --cycle N                        Repeat full wipe cycle N times (default 1, max 100)
-    --methods                        List all wipe methods with descriptions
+    -b, --buffer SIZE			I/O buffer size (e.g. 1MB, 512KB)
+    -v, --verify			Verify after wipe (default)
+    -n, --no-verify			Skip verification
+    -y, --yes				Auto‑confirm (dangerous)
+    -q, --quiet				Quiet mode (less verbose)
+    --cycle N				Repeat full wipe cycle N times (default 1, max 100)
+    --methods				List all wipe methods with descriptions
 
 EXAMPLES
-  securewipe -L --show-system-storage              # list all disks including system
-  securewipe --select-storage                      # interactive device selection
-  securewipe --analyze /dev/sdb                    # read‑only analysis
-  securewipe --skip-analysis --zero /dev/sdc       # skip analysis, write zeros immediately
-  securewipe --zero -y \\.\PhysicalDrive2          # zero fill disk 2
-  securewipe --random 5 /dev/sdc                   # 5 passes of random data
-  securewipe --ata-erase /dev/sda                  # ATA Secure Erase (normal)
-  securewipe --ata-enhanced-erase /dev/nvme0n1     # ATA Enhanced Secure Erase
-  securewipe --destroy-partition-table \\.\PhysicalDrive0   # wipe MBR/GPT only
-  securewipe --log ./custom.log /dev/sdb           # write log to custom file
-  securewipe --no-log /dev/sdb                     # disable logging
-  securewipe --emergency --sector 1000 /dev/sdc    # emergency zero‑write first 1000 sectors
-  securewipe --emergency --buffer 1M --block 10 /dev/sdc  # zero 10 blocks of 1MB each
-  securewipe --emergency /dev/sdc                  # zero entire device (full disk)
-  securewipe --wipe-file secret.txt                # securely wipe a file
-  securewipe --wipe-dir ./confidential             # recursively wipe directory
-  securewipe --rename-count 5 --wipe-file data.bin # rename 5 times before deletion
-  securewipe --methods                             # show all wipe methods
+  securewipe -L --show-system-storage				# list all disks including system
+  securewipe --select-storage					# interactive device selection
+  securewipe --analyze /dev/sdb					# read‑only analysis
+  securewipe --skip-analysis --zero /dev/sdc			# skip analysis, write zeros immediately
+  securewipe --zero -y \\.\PhysicalDrive2			# zero fill disk 2
+  securewipe --random 5 /dev/sdc				# 5 passes of random data
+  securewipe --ata-erase /dev/sda				# ATA Secure Erase (normal)
+  securewipe --ata-enhanced-erase /dev/nvme0n1			# ATA Enhanced Secure Erase
+  securewipe --destroy-partition-table \\.\PhysicalDrive0	# wipe MBR/GPT only
+  securewipe --log ./custom.log /dev/sdb			# write log to custom file
+  securewipe --no-log /dev/sdb					# disable logging
+  securewipe --emergency --sector 1000 /dev/sdc			# emergency zero‑write first 1000 sectors
+  securewipe --emergency --buffer 1M --block 10 /dev/sdc	# zero 10 blocks of 1MB each
+  securewipe --emergency /dev/sdc				# zero entire device (full disk)
+  securewipe --wipe-file secret.txt				# securely wipe a file
+  securewipe --wipe-dir ./confidential				# recursively wipe directory
+  securewipe --rename-count 5 --wipe-file data.bin		# rename 5 times before deletion
+  securewipe --methods						# show all wipe methods
 
 NOTES
   - Always backup important data before wiping.
