@@ -15,19 +15,6 @@ int main (int argumentCount, char *argumentVector[])
 {
  platformInit ();
 
- if (!checkAdminPrivileges ())
- {
-#ifdef _WIN32
-  fprintf (stderr, "ERROR: This program requires Administrator privileges.\n");
-  fprintf (stderr, "Please run as Administrator.\n");
-#else
-  fprintf (stderr, "ERROR: This program requires root privileges.\n");
-  fprintf (stderr, "Please run with sudo.\n");
-#endif
-  platformCleanup ();
-  return 1;
- }
-
  program_config_t configuration;
  configDefault (&configuration);
 
@@ -35,6 +22,19 @@ int main (int argumentCount, char *argumentVector[])
  {
   platformCleanup ();
   return 1;
+ }
+
+ if (!checkAdminPrivileges())
+ {
+#ifdef _WIN32
+	 fprintf(stderr, "ERROR: This program requires Administrator privileges.\n");
+	 fprintf(stderr, "Please run as Administrator.\n");
+#else
+	 fprintf(stderr, "ERROR: This program requires root privileges.\n");
+	 fprintf(stderr, "Please run with sudo.\n");
+#endif
+	 platformCleanup();
+	 return 1;
  }
 
  if (configuration.wipeFileMode || configuration.wipeDirMode)
