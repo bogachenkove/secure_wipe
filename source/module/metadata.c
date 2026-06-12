@@ -8,7 +8,7 @@
 #include <errno.h>
 
 #define SECURE_WIPE_NAME "Secure Wipe"
-#define SECURE_WIPE_VERSION "2.0.10.0"
+#define SECURE_WIPE_VERSION "2.0.11.0"
 #define SECURE_WIPE_DESCRIPTION "Data Destruction Tool"
 #define SECURE_WIPE_AUTHOR "Bogachenko Vyacheslav"
 #define SECURE_WIPE_CONTACT "bogachenkove@outlook.com"
@@ -209,7 +209,7 @@ bool parseArguments (int argc, char *argv[], program_config_t *config)
   {
    config->selectDisk = true;
   }
-  else if (strcmp (argv[argIndex], "-A") == 0 || strcmp (argv[argIndex], "--show-system-storage") == 0)
+  else if (strcmp (argv[argIndex], "-A") == 0 || strcmp (argv[argIndex], "--all-storage") == 0)
   {
    config->showAllDisks = true;
   }

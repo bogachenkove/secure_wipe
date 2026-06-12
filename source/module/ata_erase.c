@@ -113,20 +113,9 @@ static error_code_t ataIdentifyWindows (device_t *device, uint16_t *identifyData
 #include <linux/hdreg.h>
 #include <linux/fs.h>
 #include <sys/ioctl.h>
-
-static error_code_t ataIdentifyLinux (device_t *device, uint16_t *identifyData)
-{
- if (!device || !identifyData)
-  return ERR_INVALID_ARG;
- struct hd_driveid driveId;
- memset (&driveId, 0, sizeof (driveId));
- if (ioctl (device->handle, HDIO_GET_IDENTITY, &driveId) == 0)
- {
-  memcpy (identifyData, &driveId, 512);
-  return ERR_OK;
- }
- return ERR_READ_DEVICE;
-}
+#include <limits.h>
+#include <scsi/sg.h>
+#include <stdbool.h>
 
 static error_code_t ataPassThroughLinux (device_t *device, uint8_t command, uint8_t features, uint8_t sectorCount, uint64_t logicalBlockAddress,
 										 void *dataBuffer, size_t bufferSize, bool isWrite)
@@ -222,7 +211,7 @@ static error_code_t ataIdentifyLinux (device_t *device, uint16_t *identifyData)
 {
  if (!device || !identifyData)
   return ERR_INVALID_ARG;
- return ataPassThroughLinux (device, 0xEC, 0x00, 0x01, 0, identifyData, 512, FALSE);
+ return ataPassThroughLinux (device, 0xEC, 0x00, 0x01, 0, identifyData, 512, false);
 }
 
 #endif
@@ -311,9 +300,9 @@ static error_code_t ataSetPassword (device_t *device, const char *password, size
   securityBuffer[8 + fillIndex] = 0;
 
 #ifdef _WIN32
- return ataPassThroughWindows (device, 0xF1, 0x01, 0x00, 0x00, 0x00, 0x00, 0xA0, securityBuffer, 512, TRUE);
+ return ataPassThroughWindows (device, 0xF1, 0x01, 0x00, 0x00, 0x00, 0x00, 0xA0, securityBuffer, 512, true);
 #else
- return ataPassThroughLinux (device, 0xF1, 0x01, 0x01, 0, securityBuffer, 512, TRUE);
+ return ataPassThroughLinux (device, 0xF1, 0x01, 0x01, 0, securityBuffer, 512, true);
 #endif
 }
 
@@ -332,9 +321,9 @@ static error_code_t ataDisablePassword (device_t *device, const char *password, 
   securityBuffer[8 + fillIndex] = 0;
 
 #ifdef _WIN32
- return ataPassThroughWindows (device, 0xF1, 0x00, 0x00, 0x00, 0x00, 0x00, 0xA0, securityBuffer, 512, TRUE);
+ return ataPassThroughWindows (device, 0xF1, 0x00, 0x00, 0x00, 0x00, 0x00, 0xA0, securityBuffer, 512, true);
 #else
- return ataPassThroughLinux (device, 0xF1, 0x00, 0x01, 0, securityBuffer, 512, TRUE);
+ return ataPassThroughLinux (device, 0xF1, 0x00, 0x01, 0, securityBuffer, 512, true);
 #endif
 }
 
@@ -349,9 +338,9 @@ static error_code_t ataExecuteSecureErase (device_t *device, ata_erase_type_t er
  uint8_t features = 0x00;
 
 #ifdef _WIN32
- return ataPassThroughWindows (device, command, features, 0x00, 0x00, 0x00, 0x00, 0xA0, NULL, 0, FALSE);
+ return ataPassThroughWindows (device, command, features, 0x00, 0x00, 0x00, 0x00, 0xA0, NULL, 0, false);
 #else
- return ataPassThroughLinux (device, command, features, 0x01, 0, NULL, 0, FALSE);
+ return ataPassThroughLinux (device, command, features, 0x01, 0, NULL, 0, false);
 #endif
 }
 
@@ -367,11 +356,11 @@ bool ataIsFrozen (device_t *device)
   return true;
  return (identifyData[128] & 0x0008) ? true : false;
 #else
- struct hd_driveid driveId;
- memset (&driveId, 0, sizeof (driveId));
- if (ioctl (device->handle, HDIO_GET_IDENTITY, &driveId) != 0)
+ uint16_t identifyData[256];
+ memset (identifyData, 0, sizeof (identifyData));
+ if (ataIdentifyLinux (device, identifyData) != ERR_OK)
   return true;
- return (driveId.security & 0x0008) ? true : false;
+ return (identifyData[128] & 0x0008) != 0;
 #endif
 }
 
