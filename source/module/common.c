@@ -1,157 +1,123 @@
 #include "common.h"
 #include <stdarg.h>
-
-size_t gBufferSize = DEFAULT_BUFFER_SIZE;
-size_t gBufferSectors = DEFAULT_BUFFER_SIZE / SECTOR_SIZE;
-
-logger_t gLogger = {NULL, false, ""};
-char gLogFilePath[MAX_PATH_LEN] = {0};
-bool gNoLog = false;
-uint8_t gDefaultRenameCount = 3;
-
-int bufferSetSize (size_t sizeBytes)
-{
- if (sizeBytes < MIN_BUFFER_SIZE || sizeBytes > MAX_BUFFER_SIZE)
- {
-  LOG_ERROR ("Buffer size must be between %d and %d bytes", MIN_BUFFER_SIZE, MAX_BUFFER_SIZE);
-  return -1;
- }
- if (sizeBytes % SECTOR_SIZE != 0)
- {
-  LOG_ERROR ("Buffer size must be multiple of sector size (%d)", SECTOR_SIZE);
-  return -1;
- }
- gBufferSize = sizeBytes;
- gBufferSectors = sizeBytes / SECTOR_SIZE;
- LOG_INFO ("Buffer size set to %zu bytes (%zu sectors)", gBufferSize, gBufferSectors);
- return 0;
+size_t global_buffer_size = DEFAULT_BUFFER_SIZE;
+size_t global_buffer_sectors = DEFAULT_BUFFER_SIZE / SECTOR_SIZE;
+logger_t global_logger = {NULL, false, ""};
+char global_log_file_path[MAX_PATH_LEN] = {0};
+bool global_no_log = false;
+uint8_t global_default_rename_count = 3;
+int buffer_set_size(size_t size_bytes) {
+  if (size_bytes < MIN_BUFFER_SIZE || size_bytes > MAX_BUFFER_SIZE) {
+    LOG_ERROR("Buffer size must be between %d and %d bytes", MIN_BUFFER_SIZE, MAX_BUFFER_SIZE);
+    return -1;
+  }
+  if (size_bytes % SECTOR_SIZE != 0) {
+    LOG_ERROR("Buffer size must be multiple of sector size (%d)", SECTOR_SIZE);
+    return -1;
+  }
+  global_buffer_size = size_bytes;
+  global_buffer_sectors = size_bytes / SECTOR_SIZE;
+  LOG_INFO("Buffer size set to %zu bytes (%zu sectors)", global_buffer_size, global_buffer_sectors);
+  return 0;
 }
-
-void bufferGetSizeInfo (size_t *outSizeBytes, size_t *outSectors)
-{
- if (outSizeBytes)
-  *outSizeBytes = gBufferSize;
- if (outSectors)
-  *outSectors = gBufferSectors;
+void buffer_get_size_info(size_t *out_size_bytes, size_t *out_sectors) {
+  if (out_size_bytes)
+    *out_size_bytes = global_buffer_size;
+  if (out_sectors)
+    *out_sectors = global_buffer_sectors;
 }
-
-void logInit (const char *logPath, bool verbose)
-{
- gLogger.verbose = verbose;
- if (logPath && strlen (logPath) > 0 && !gNoLog)
- {
-  snprintf (gLogger.logPath, sizeof (gLogger.logPath), "%s", logPath);
-  gLogger.logFile = fopen (logPath, "w");
-  if (!gLogger.logFile)
-   fprintf (stderr, "Warning: Cannot open log file: %s\n", logPath);
- }
- else
- {
-  gLogger.logFile = NULL;
-  gLogger.logPath[0] = '\0';
- }
+void log_init(const char *log_path, bool verbose) {
+  global_logger.verbose = verbose;
+  if (log_path && strlen(log_path) > 0 && !global_no_log) {
+    snprintf(global_logger.log_path, sizeof(global_logger.log_path), "%s", log_path);
+    global_logger.log_file = fopen(log_path, "w");
+    if (!global_logger.log_file)
+      fprintf(stderr, "Warning: Cannot open log file: %s\n", log_path);
+  } else {
+    global_logger.log_file = NULL;
+    global_logger.log_path[0] = '\0';
+  }
 }
-
-void logClose (void)
-{
- if (gLogger.logFile)
- {
-  fclose (gLogger.logFile);
-  gLogger.logFile = NULL;
- }
+void log_close(void) {
+  if (global_logger.log_file) {
+    fclose(global_logger.log_file);
+    global_logger.log_file = NULL;
+  }
 }
-
-void logMessage (const char *level, const char *format, ...)
-{
- char timestamp[64];
- time_t currentTime = time (NULL);
- struct tm *timeInfo = localtime (&currentTime);
- if (!timeInfo)
- {
-  fprintf (stderr, "localtime failed\n");
-  return;
- }
- strftime (timestamp, sizeof (timestamp), "%Y-%m-%d %H:%M:%S", timeInfo);
-
- va_list argumentList;
-
- if (gLogger.verbose || strcmp (level, "ERROR") == 0)
- {
-  printf ("[%s] [%s] ", timestamp, level);
-  va_start (argumentList, format);
-  vprintf (format, argumentList);
-  va_end (argumentList);
-  printf ("\n");
-  fflush (stdout);
- }
-
- if (gLogger.logFile)
- {
-  fprintf (gLogger.logFile, "[%s] [%s] ", timestamp, level);
-  va_start (argumentList, format);
-  vfprintf (gLogger.logFile, format, argumentList);
-  va_end (argumentList);
-  fprintf (gLogger.logFile, "\n");
-  fflush (gLogger.logFile);
- }
+void log_message(const char *level, const char *format, ...) {
+  char timestamp[64];
+  time_t current_time = time(NULL);
+  struct tm *time_info = localtime(&current_time);
+  if (!time_info) {
+    fprintf(stderr, "localtime failed\n");
+    return;
+  }
+  strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", time_info);
+  va_list argument_list;
+  if (global_logger.verbose || strcmp(level, "ERROR") == 0) {
+    printf("[%s] [%s] ", timestamp, level);
+    va_start(argument_list, format);
+    vprintf(format, argument_list);
+    va_end(argument_list);
+    printf("\n");
+    fflush(stdout);
+  }
+  if (global_logger.log_file) {
+    fprintf(global_logger.log_file, "[%s] [%s] ", timestamp, level);
+    va_start(argument_list, format);
+    vfprintf(global_logger.log_file, format, argument_list);
+    va_end(argument_list);
+    fprintf(global_logger.log_file, "\n");
+    fflush(global_logger.log_file);
+  }
 }
-
-void logBadSector (uint64_t sector, const char *operation)
-{
- logMessage ("WARN", "Bad sector detected: %llu during %s", (unsigned long long) sector, operation);
+void log_bad_sector(uint64_t sector, const char *operation) {
+  log_message("WARN", "Bad sector detected: %llu during %s", (unsigned long long)sector, operation);
 }
-
-const char *errorToString (error_code_t errorCode)
-{
- switch (errorCode)
- {
- case ERR_OK:
-  return "Success";
- case ERR_OPEN_DEVICE:
-  return "Failed to open device";
- case ERR_READ_DEVICE:
-  return "Failed to read device";
- case ERR_WRITE_DEVICE:
-  return "Failed to write device";
- case ERR_SEEK_DEVICE:
-  return "Failed to seek device";
- case ERR_GET_SIZE:
-  return "Failed to get device size";
- case ERR_MEMORY:
-  return "Memory allocation failed";
- case ERR_PERMISSION:
-  return "Insufficient permissions";
- case ERR_INVALID_ARG:
-  return "Invalid argument";
- case ERR_RANDOM_GEN:
-  return "Random generation failed";
- default:
-  return "Unknown error";
- }
+const char *error_to_string(error_code_t error_code) {
+  switch (error_code) {
+  case ERR_OK:
+    return "Success";
+  case ERR_OPEN_DEVICE:
+    return "Failed to open device";
+  case ERR_READ_DEVICE:
+    return "Failed to read device";
+  case ERR_WRITE_DEVICE:
+    return "Failed to write device";
+  case ERR_SEEK_DEVICE:
+    return "Failed to seek device";
+  case ERR_GET_SIZE:
+    return "Failed to get device size";
+  case ERR_MEMORY:
+    return "Memory allocation failed";
+  case ERR_PERMISSION:
+    return "Insufficient permissions";
+  case ERR_INVALID_ARG:
+    return "Invalid argument";
+  case ERR_RANDOM_GEN:
+    return "Random generation failed";
+  default:
+    return "Unknown error";
+  }
 }
-
-void formatBytes (uint64_t bytes, char *outputBuffer, size_t bufferSize)
-{
- const char *units[] = {"B", "KB", "MB", "GB", "TB"};
- int unitIndex = 0;
- double size = (double) bytes;
- while (size >= 1024.0 && unitIndex < 4)
- {
-  size /= 1024.0;
-  unitIndex++;
- }
- snprintf (outputBuffer, bufferSize, "%.2f %s", size, units[unitIndex]);
+void format_bytes(uint64_t bytes, char *output_buffer, size_t buffer_size) {
+  const char *units[] = {"B", "KB", "MB", "GB", "TB"};
+  int unit_index = 0;
+  double size = (double)bytes;
+  while (size >= 1024.0 && unit_index < 4) {
+    size /= 1024.0;
+    unit_index++;
+  }
+  snprintf(output_buffer, buffer_size, "%.2f %s", size, units[unit_index]);
 }
-
-void formatTime (time_t seconds, char *outputBuffer, size_t bufferSize)
-{
- int hours = (int) (seconds / 3600);
- int minutes = (int) ((seconds % 3600) / 60);
- int secs = (int) (seconds % 60);
- if (hours > 0)
-  snprintf (outputBuffer, bufferSize, "%dh %dm %ds", hours, minutes, secs);
- else if (minutes > 0)
-  snprintf (outputBuffer, bufferSize, "%dm %ds", minutes, secs);
- else
-  snprintf (outputBuffer, bufferSize, "%ds", secs);
+void format_time(time_t seconds, char *output_buffer, size_t buffer_size) {
+  int hours = (int)(seconds / 3600);
+  int minutes = (int)((seconds % 3600) / 60);
+  int secs = (int)(seconds % 60);
+  if (hours > 0)
+    snprintf(output_buffer, buffer_size, "%dh %dm %ds", hours, minutes, secs);
+  else if (minutes > 0)
+    snprintf(output_buffer, buffer_size, "%dm %ds", minutes, secs);
+  else
+    snprintf(output_buffer, buffer_size, "%ds", secs);
 }

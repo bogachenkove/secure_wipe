@@ -10,193 +10,156 @@
 #include "module/device_io.h"
 #include "module/ata_erase.h"
 #include "module/file_wiper.h"
-
-int main (int argumentCount, char *argumentVector[])
-{
- platformInit ();
-
- program_config_t configuration;
- configDefault (&configuration);
-
- if (!parseArguments (argumentCount, argumentVector, &configuration))
- {
-  platformCleanup ();
-  return 1;
- }
-
- if (!checkAdminPrivileges())
- {
+int main(int argument_count, char *argument_vector[]) {
+  platform_init();
+  program_config_t configuration;
+  config_default(&configuration);
+  if (!parse_arguments(argument_count, argument_vector, &configuration)) {
+    platform_cleanup();
+    return 1;
+  }
+  if (!check_admin_privileges()) {
 #ifdef _WIN32
-	 fprintf(stderr, "ERROR: This program requires Administrator privileges.\n");
-	 fprintf(stderr, "Please run as Administrator.\n");
+    fprintf(stderr, "ERROR: This program requires Administrator privileges.\n");
+    fprintf(stderr, "Please run as Administrator.\n");
 #else
-	 fprintf(stderr, "ERROR: This program requires root privileges.\n");
-	 fprintf(stderr, "Please run with sudo.\n");
+    fprintf(stderr, "ERROR: This program requires root privileges.\n");
+    fprintf(stderr, "Please run with sudo.\n");
 #endif
-	 platformCleanup();
-	 return 1;
- }
-
- if (configuration.wipeFileMode || configuration.wipeDirMode)
- {
-  file_wipe_config_t fileConfig = {0};
-  fileConfig.method = configuration.method;
-  fileConfig.passes = configuration.passes;
-  fileConfig.renameBeforeDelete = (gDefaultRenameCount > 0);
-  fileConfig.renameCount = gDefaultRenameCount;
-  fileConfig.preserveTimestamps = false;
-  fileConfig.progress = progressHandler;
-
-  error_code_t err = fileWipePath (configuration.wipeFilePath, &fileConfig);
-  if (err != ERR_OK)
-   fprintf (stderr, "Failed to wipe: %s\n", errorToString (err));
-  else
-   printf ("Wipe completed successfully.\n");
-
-  platformCleanup ();
-  return (err == ERR_OK) ? 0 : 1;
- }
-
- if (configuration.emergencyMode)
- {
-  int exitCode = emergencyWipe (&configuration);
-  platformCleanup ();
-  return exitCode;
- }
- if (configuration.ataSecureErase)
- {
-  device_t device;
-  error_code_t openStatus = deviceOpen (&device, configuration.devicePath, false);
-  if (openStatus != ERR_OK)
-  {
-   fprintf (stderr, "Failed to open device %s: %s\n", configuration.devicePath, errorToString (openStatus));
-   platformCleanup ();
-   return 1;
+    platform_cleanup();
+    return 1;
   }
-  ata_security_info_t info;
-  if (ataGetSecurityInfo (&device, &info) != ERR_OK)
-  {
-   fprintf (stderr, "ERROR: Cannot query ATA security features.\n");
-   fprintf (stderr, "This may be because:\n");
-   fprintf (stderr, "  - Device is connected via USB (many USB bridges block ATA commands)\n");
-   fprintf (stderr, "  - Device is virtual or does not support ATA Secure Erase\n");
-   fprintf (stderr, "  - Driver/antivirus is blocking low-level access\n");
-   fprintf (stderr, "Try using standard wipe methods instead.\n");
-   deviceClose (&device);
-   platformCleanup ();
-   return 1;
+  if (configuration.wipe_file_mode || configuration.wipe_dir_mode) {
+    file_wipe_config_t file_config = {0};
+    file_config.method = configuration.method;
+    file_config.passes = configuration.passes;
+    file_config.rename_before_delete = (global_default_rename_count > 0);
+    file_config.rename_count = global_default_rename_count;
+    file_config.preserve_timestamps = false;
+    file_config.progress = progress_handler;
+    error_code_t error = file_wipe_path(configuration.wipe_file_path, &file_config);
+    if (error != ERR_OK)
+      fprintf(stderr, "Failed to wipe: %s\n", error_to_string(error));
+    else
+      printf("Wipe completed successfully.\n");
+    platform_cleanup();
+    return (error == ERR_OK) ? 0 : 1;
   }
-  if (!info.supported)
-  {
-   fprintf (stderr, "ERROR: ATA Security not supported by this device.\n");
-   deviceClose (&device);
-   platformCleanup ();
-   return 1;
+  if (configuration.emergency_mode) {
+    int exit_code = emergency_wipe(&configuration);
+    platform_cleanup();
+    return exit_code;
   }
-  ata_erase_type_t eraseType = configuration.ataEnhancedErase ? ATA_ERASE_ENHANCED : ATA_ERASE_NORMAL;
-  int exitCode = ataSecureErase (&device, eraseType, progressHandler);
-  deviceClose (&device);
-  platformCleanup ();
-  return exitCode;
- }
-
- if (configuration.listDisks)
- {
-  disk_scan_result_t *scanResult = (disk_scan_result_t *) malloc (sizeof (disk_scan_result_t));
-  if (!scanResult)
-  {
-   fprintf (stderr, "Memory allocation failed\n");
-   platformCleanup ();
-   return 1;
+  if (configuration.ata_secure_erase) {
+    device_t device;
+    error_code_t open_status = device_open(&device, configuration.device_path, false);
+    if (open_status != ERR_OK) {
+      fprintf(stderr, "Failed to open device %s: %s\n", configuration.device_path, error_to_string(open_status));
+      platform_cleanup();
+      return 1;
+    }
+    ata_security_info_t info;
+    if (ata_get_security_info(&device, &info) != ERR_OK) {
+      fprintf(stderr, "ERROR: Cannot query ATA security features.\n");
+      fprintf(stderr, "This may be because:\n");
+      fprintf(stderr, "  - Device is connected via USB (many USB bridges block ATA commands)\n");
+      fprintf(stderr, "  - Device is virtual or does not support ATA Secure Erase\n");
+      fprintf(stderr, "  - Driver/antivirus is blocking low-level access\n");
+      fprintf(stderr, "Try using standard wipe methods instead.\n");
+      device_close(&device);
+      platform_cleanup();
+      return 1;
+    }
+    if (!info.supported) {
+      fprintf(stderr, "ERROR: ATA Security not supported by this device.\n");
+      device_close(&device);
+      platform_cleanup();
+      return 1;
+    }
+    ata_erase_type_t erase_type = configuration.ata_enhanced_erase ? ATA_ERASE_ENHANCED : ATA_ERASE_NORMAL;
+    int exit_code = ata_secure_erase(&device, erase_type, progress_handler);
+    device_close(&device);
+    platform_cleanup();
+    return exit_code;
   }
-  if (diskScannerScan (scanResult) == ERR_OK)
-   diskScannerPrintList (scanResult, configuration.showAllDisks);
-  else
-   fprintf (stderr, "Failed to scan disks\n");
-  free (scanResult);
-  platformCleanup ();
-  return 0;
- }
-
- if (configuration.selectDisk || strlen (configuration.devicePath) == 0)
- {
-  if (!interactiveSelectDisk (&configuration))
-  {
-   platformCleanup ();
-   return 1;
+  if (configuration.list_disks) {
+    disk_scan_result_t *scan_result = (disk_scan_result_t *)malloc(sizeof(disk_scan_result_t));
+    if (!scan_result) {
+      fprintf(stderr, "Memory allocation failed\n");
+      platform_cleanup();
+      return 1;
+    }
+    if (disk_scanner_scan(scan_result) == ERR_OK)
+      disk_scanner_print_list(scan_result);
+    else
+      fprintf(stderr, "Failed to scan disks\n");
+    free(scan_result);
+    platform_cleanup();
+    return 0;
   }
- }
-
- if (!gNoLog)
- {
-  if (strlen (gLogFilePath) == 0)
-  {
-   const char *temporaryDirectory = NULL;
+  if (configuration.select_disk || strlen(configuration.device_path) == 0) {
+    if (!interactive_select_disk(&configuration)) {
+      platform_cleanup();
+      return 1;
+    }
+  }
+  if (!global_no_log) {
+    if (strlen(global_log_file_path) == 0) {
+      const char *temporary_directory = NULL;
 #ifdef _WIN32
-   char tempPathBuffer[MAX_PATH_LEN];
-   temporaryDirectory = getenv ("TEMP");
-   if (!temporaryDirectory)
-   {
-	DWORD length = GetTempPathA (sizeof (tempPathBuffer), tempPathBuffer);
-	if (length > 0 && length < sizeof (tempPathBuffer))
-	 temporaryDirectory = tempPathBuffer;
-	else
-	{
-	 char systemDrive[4] = "C:";
-	 GetEnvironmentVariableA ("SystemDrive", systemDrive, sizeof (systemDrive));
-	 snprintf (tempPathBuffer, sizeof (tempPathBuffer), "%s\\Windows\\Temp", systemDrive);
-	 temporaryDirectory = tempPathBuffer;
-	}
-   }
+      char temp_path_buffer[MAX_PATH_LEN];
+      temporary_directory = getenv("TEMP");
+      if (!temporary_directory) {
+        DWORD length = GetTempPathA(sizeof(temp_path_buffer), temp_path_buffer);
+        if (length > 0 && length < sizeof(temp_path_buffer))
+          temporary_directory = temp_path_buffer;
+        else {
+          char system_drive[4] = "C:";
+          GetEnvironmentVariableA("SystemDrive", system_drive, sizeof(system_drive));
+          snprintf(temp_path_buffer, sizeof(temp_path_buffer), "%s\\Windows\\Temp", system_drive);
+          temporary_directory = temp_path_buffer;
+        }
+      }
 #else
-   temporaryDirectory = "/tmp";
+      temporary_directory = "/tmp";
 #endif
-   time_t currentTime = time (NULL);
-   struct tm *timeInfo = localtime (&currentTime);
-   if (!timeInfo)
-   {
-	fprintf (stderr, "localtime failed\n");
-	platformCleanup ();
-	return 1;
-   }
-   char timestamp[32];
-   strftime (timestamp, sizeof (timestamp), "%Y%m%d_%H%M%S", timeInfo);
-   snprintf (gLogFilePath, sizeof (gLogFilePath), "%s/securewipe_%s.log", temporaryDirectory, timestamp);
+      time_t current_time = time(NULL);
+      struct tm *time_info = localtime(&current_time);
+      if (!time_info) {
+        fprintf(stderr, "localtime failed\n");
+        platform_cleanup();
+        return 1;
+      }
+      char timestamp[32];
+      strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", time_info);
+      snprintf(global_log_file_path, sizeof(global_log_file_path), "%s/securewipe_%s.log", temporary_directory, timestamp);
+    }
+    log_init(global_log_file_path, configuration.verbose);
+    LOG_INFO("Secure Wipe started on %s", configuration.device_path);
+  } else {
+    log_init(NULL, configuration.verbose);
+    if (configuration.verbose)
+      printf("Logging to file disabled (--no-log).\n");
   }
-  logInit (gLogFilePath, configuration.verbose);
-  LOG_INFO ("Secure Wipe started on %s", configuration.devicePath);
- }
- else
- {
-  logInit (NULL, configuration.verbose);
-  if (configuration.verbose)
-   printf ("Logging to file disabled (--no-log).\n");
- }
-
- if (randomInit () != ERR_OK)
- {
-  LOG_ERROR ("Random init failed");
-  logClose ();
-  platformCleanup ();
-  return 1;
- }
-
- if (wiperInit () != ERR_OK)
- {
-  LOG_ERROR ("Wiper init failed");
-  randomCleanup ();
-  logClose ();
-  platformCleanup ();
-  return 1;
- }
-
- analysis_result_t analysisResult;
- int finalExitCode = runWipe (&configuration, &analysisResult);
-
- wiperCleanup ();
- randomCleanup ();
- LOG_INFO ("Secure Wipe finished with code %d", finalExitCode);
- logClose ();
- platformCleanup ();
- return finalExitCode;
+  if (random_init() != ERR_OK) {
+    LOG_ERROR("Random init failed");
+    log_close();
+    platform_cleanup();
+    return 1;
+  }
+  if (wiper_init() != ERR_OK) {
+    LOG_ERROR("Wiper init failed");
+    random_cleanup();
+    log_close();
+    platform_cleanup();
+    return 1;
+  }
+  analysis_result_t analysis_result;
+  int final_exit_code = run_wipe(&configuration, &analysis_result);
+  wiper_cleanup();
+  random_cleanup();
+  LOG_INFO("Secure Wipe finished with code %d", final_exit_code);
+  log_close();
+  platform_cleanup();
+  return final_exit_code;
 }
